@@ -232,14 +232,28 @@ nml_mat *nml_mat_fromfilef(FILE *f) {
   return r;
 }
 
-// Frees a matrix structure
+/**
+ * Frees a matrix structure
+ *
+ * @param  matrix  the matrix to be freed.
+ *
+ * Yoel.- It is a good practice to assign the freed pointer to `NULL`.
+ *        This way, even an unintentional access to the value of the pointer
+ *        will read `NULL`, instead of the previous value of it (leading to 
+ *        potentially dangerous results)
+ */
 void nml_mat_free(nml_mat *matrix) {
   int i;
   for(i = 0; i < matrix->num_rows; ++i) {
     free(matrix->data[i]);
+    // Yoel.-
+    matrix->data[i] = NULL;
   }
   free(matrix->data);
   free(matrix);
+  // Yoel.-
+  matrix->data = NULL;
+  matrix = NULL;
 }
 
 // *****************************************************************************

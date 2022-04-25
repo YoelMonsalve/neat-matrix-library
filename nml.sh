@@ -6,6 +6,7 @@
 CC=gcc
 CCFLAGS="-Wall -c"
 CCFLAGS_EXAMPLES="-Wall"
+LIBFLAGS="-lm"
 AR=ar
 ARFLAGS="crs"
 SOURCE_FILES=(nml.c nml_util.c)
@@ -73,7 +74,7 @@ function compile_objects {
   for src_file in ${SOURCE_FILES[@]};
   do
     echo -e "\tCompiling ${src_file}"
-    $CC ${CCFLAGS} ${src_file}
+    $CC ${CCFLAGS} ${LIBFLAGS} ${src_file}
   done
 }
 
@@ -120,7 +121,7 @@ function examples {
   ls ${EXAMPLES}/*.c | while read file ;
     do
       echo -e "\t $file -> ${GREEN}${file%%.*}.ex${NC}"
-      ${CC} ${CCFLAGS_EXAMPLES} ${file} -L ./${EXAMPLES}/lib -l${LIB_NAME_SIMPLE} -o ${file%%.*}.ex
+      ${CC} ${CCFLAGS_EXAMPLES} ${LIBFLAGS} ${file} -L ./${EXAMPLES}/lib -l${LIB_NAME_SIMPLE} -o ${file%%.*}.ex
     done
 }
 
@@ -132,7 +133,7 @@ function tests {
   ls ${TESTS}/*.c | while read file ;
     do 
       echo -e "\t $file -> ${file%%.*}.ex${NC}"
-      ${CC} ${CCFLAGS_EXAMPLES} ${file} -L ./${TESTS}/lib -l${LIB_NAME_SIMPLE} -o ${file%%.*}.ex
+      ${CC} ${CCFLAGS_EXAMPLES} ${file} ${LIBFLAGS} -L ./${TESTS}/lib -l${LIB_NAME_SIMPLE} -o ${file%%.*}.ex
     done
   echo -e "${YELLOW}Running Tests:${NC}"
   ls ${TESTS}/*ex | while read file ;
@@ -140,6 +141,18 @@ function tests {
       ./${file} `pwd`/${file%%.*}.data
     done   
 } 
+
+function usage {
+  echo -e "Usage:"
+  echo -e "\t ${YELLOW}./nml.sh build${NC}"
+  echo -e "\t\t Builds the lib in: ${YELLOW}${DIST_DIR}/${NC}."
+  echo -e "\t ${YELLOW}./nml.sh test${NC}"
+  echo -e "\t\t Runs lib tests."
+  echo -e "\t ${YELLOW}./nml.sh examples${NC}"
+  echo -e "\t\t Builds ${YELLOW}${EXAMPLES}${NC}/ folder with the latest build."
+  echo -e "\t ${YELLOW}./nml.sh clean${NC}"
+  echo -e "\t\t Cleans the folder for *.o and *.a files. Deletes the ${YELLOW}${DIST_DIR}/${NC} folder."
+}
 
 ### MAIN ###
 
@@ -173,17 +186,12 @@ do
   "clean")
     clean
     ;;
+  "help")
+    usage
+    ;;
   *)
     echo -e "${RED}Unknown Option: '${1}'.${NC}"
-    echo -e "Usage:"
-    echo -e "\t ${YELLOW}./nml.sh build${NC}"
-    echo -e "\t\t Builds the lib in: ${YELLOW}${DIST_DIR}/${NC}."
-    echo -e "\t ${YELLOW}./nml.sh tests${NC}"
-    echo -e "\t\t Runs lib tests."
-    echo -e "\t ${YELLOW}./nml.sh examples${NC}"
-    echo -e "\t\t Builds ${YELLOW}${EXAMPLES}${NC}/ folder with the latest build."
-    echo -e "\t ${YELLOW}./nml.sh clean${NC}"
-    echo -e "\t\t Cleans the folder for *.o and *.a files. Deletes the ${YELLOW}${DIST_DIR}/${NC} folder."
+    usage
     ;;
   esac
 done
