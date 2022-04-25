@@ -4,14 +4,14 @@
 
 # COMPILING RELATED
 CC=gcc
-CCFLAGS="-Wall -c"
-CCFLAGS_EXAMPLES="-Wall"
+CCFLAGS="-Wall -c --std=c99"
+CCFLAGS_EXAMPLES="-Wall --std=c99"
 LIBFLAGS="-lm"
 AR=ar
 ARFLAGS="crs"
 SOURCE_FILES=(nml.c nml_util.c)
 OBJECT_FILES=(nml.o nml_util.o)
-HEADER_FILES=(nml.h nml_util.h)
+HEADER_FILES=(nml.h nml_def.h nml_util.h)
 LIB_NAME="libnml.a"
 LIB_NAME_SIMPLE="nml"
 DIST_DIR="dist"
@@ -132,14 +132,16 @@ function tests {
   echo -e "${YELLOW}Compiling Tests:${NC}"
   ls ${TESTS}/*.c | while read file ;
     do 
-      echo -e "\t $file -> ${file%%.*}.ex${NC}"
+      echo -e "\t$file -> ${file%%.*}.ex${NC}"
       ${CC} ${CCFLAGS_EXAMPLES} ${file} ${LIBFLAGS} -L ./${TESTS}/lib -l${LIB_NAME_SIMPLE} -o ${file%%.*}.ex
     done
+  : '
   echo -e "${YELLOW}Running Tests:${NC}"
   ls ${TESTS}/*ex | while read file ;
     do
       ./${file} `pwd`/${file%%.*}.data
     done   
+  '
 } 
 
 function usage {

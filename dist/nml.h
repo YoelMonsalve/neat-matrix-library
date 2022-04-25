@@ -22,6 +22,7 @@ extern "C" {
 #define nml_UTIL
 
 #include "nml_util.h"
+#include "nml_def.h"
 
 #define NML_MIN_COEF 0.000000000000001
 
@@ -35,6 +36,9 @@ typedef struct nml_mat_s {
   unsigned int num_cols;
   double **data;
   int is_square;
+
+  // new field, 1D-dimensioned
+  double *__data;
 } nml_mat;
 
 typedef struct nml_mat_lup_s {
@@ -48,6 +52,7 @@ typedef struct nml_mat_qr_s {
   nml_mat *Q;
   nml_mat *R;
 } nml_mat_qr;
+
 
 // *****************************************************************************
 //

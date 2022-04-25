@@ -1,5 +1,5 @@
 /**
-Copyright 2021 Andrei N. Ciobanu
+Copyright 20201 Andrei N. Ciobanu
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -134,8 +134,10 @@ nml_mat *nml_mat_new(unsigned int num_rows, unsigned int num_cols) {
   nml_mat *m = calloc(1, sizeof(*m));
   NP_CHECK(m);
   
-  m->num_rows = num_rows;
-  m->num_cols = num_cols;
+  //m->num_rows = num_rows;
+  //m->num_cols = num_cols;
+  __ROWS(m) = num_rows;
+  __COLS(m) = num_cols;
   
   m->is_square = (num_rows == num_cols) ? 1 : 0;
   m->data = calloc(m->num_rows, sizeof(*m->data));
@@ -145,10 +147,6 @@ nml_mat *nml_mat_new(unsigned int num_rows, unsigned int num_cols) {
     m->data[i] = calloc(m->num_cols, sizeof(**m->data));
     NP_CHECK(m->data[i]);
   }
-
-  // new block, to store data contiguously
-  m->__data = calloc(m->num_rows * m->num_cols, sizeof(*m->__data));
-  NP_CHECK(m->__data);
   return m;
 }
 
@@ -158,9 +156,6 @@ nml_mat *nml_mat_rnd(unsigned int num_rows, unsigned int num_cols, double min, d
   for(i = 0; i < num_rows; i++) {
     for(j = 0; j < num_cols; j++) {
       r->data[i][j] = nml_rand_interval(min, max);
-
-      r->__data[ __1D_INDEX(i,j,r->num_cols) ] = nml_rand_interval(min, max);
-      __ELEM(r, i, j) = nml_rand_interval(min, max);
     }
   }
   return r;
@@ -313,9 +308,6 @@ void nml_mat_printf(nml_mat *matrix, const char *d_fmt) {
   for(i = 0; i < matrix->num_rows; ++i) {
     for(j = 0; j < matrix->num_cols; ++j) {
       fprintf(stdout, d_fmt, matrix->data[i][j]);
-
-      // new way, based in contiguous container
-      fprintf(stdout, d_fmt, __ELEM(matrix, i, j));      
     }
     fprintf(stdout, "\n");
   }
