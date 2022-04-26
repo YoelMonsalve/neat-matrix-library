@@ -155,7 +155,7 @@ nml_mat *nml_mat_new(unsigned int num_rows, unsigned int num_cols) {
     NP_CHECK(m->data[i]);
   }
 
-  // new block, to store data contiguously
+  // new form, to store data contiguously
   m->__data = calloc(m->num_rows * m->num_cols, sizeof(*m->__data));
   NP_CHECK(m->__data);    // asserting the data was allocated
   return m;
@@ -201,14 +201,19 @@ nml_mat *nml_mat_sqr(unsigned int size) {
 nml_mat *nml_mat_rnd(unsigned int num_rows, unsigned int num_cols, double min, double max) {
   nml_mat *r = nml_mat_new(num_rows, num_cols);
   int i, j;
+  
+  #if 1
   for(i = 0; i < num_rows; i++) {
     for(j = 0; j < num_cols; j++) {
       r->data[i][j] = nml_rand_interval(min, max);
-
-      // new form
-      const int num_cols = __NML_COLS(r);
-      __NML_ELEM(r, i, j, num_cols) = nml_rand_interval(min, max);
     }
+  }
+  #endif
+
+  // new form, based in contiguous allocation
+  int k;
+  for (k = 0; k < num_rows * num_cols; k++) {
+    __NML_DATA(r)[k] = nml_rand_interval(min, max);
   }
   return r;
 }
@@ -239,39 +244,71 @@ nml_mat *nml_mat_eye(unsigned int size) {
   int i;
   for(i = 0; i < r->num_rows; i++) {
     r->data[i][i] = 1.0;
-    // new form
+  
+    // new form, based on contiguous allocation
     const int num_cols = __NML_COLS(r);
     __NML_ELEM(r, i, i, num_cols) = 1.0;
   }
   return r;
 }
 
-// --- TODO ---
-
-// Dynamically allocates a new matrix struct
-// Initialise the matrix by reading values from a vector
+/**
+ * Initialise a matrix by reading values from a vector.
+ *
+ * @param   num_rows  number of rows of the new matrix
+ * @param   num_cols  number of columns of the new matrix
+ * @param   n_vals    lenght of the vector of values to read from
+ * @param   vals      vector of values to read from
+ * @return            pointer to the new created matrix struct.
+ */
 nml_mat *nml_mat_from(unsigned int num_rows, unsigned int num_cols, unsigned int n_vals, double *vals) {
-  nml_mat *m = nml_mat_new(num_rows, num_cols);
   int i, j, v_idx;
-  for(i = 0; i < m->num_rows; i++) {
-    for(j = 0; j < m->num_cols; j++) {
-      v_idx = i * m->num_cols + j;
+
+  nml_mat *m = nml_mat_new(num_rows, num_cols);
+  
+  #if 1
+  // Yoel.-  m->num_rows is the same than num_rows, but using num_rows will avoid the
+  //         overload by accessing m.
+  //for(i = 0; i < m->num_rows; i++) {
+  for(i = 0; i < num_rows; i++) {
+    //for(j = 0; j < m->num_cols; j++) {
+    for(j = 0; j < num_cols; j++) {
+      v_idx = i * num_cols + j;
       m->data[i][j] = (v_idx < n_vals) ? vals[v_idx] : 0.0;
     }
   }
+  #endif
+
+  /* Delegating on the efficient standard C library, the task to deal with
+   * memory operations */
+  memcpy(__NML_DATA(m), vals, n_vals);
   return m;
 }
 
-// Dynamically allocates a new Matrix
-// Initialise the matrix by copying another one
+/**
+ * Initialise a matrix by copying from another one.
+ * Dynamically allocates a new Matrix.
+ *
+ * @param   m  the other matrix
+ * @return     pointer to the new created matrix struct.
+ */
 nml_mat *nml_mat_cp(nml_mat *m) {
-  nml_mat *r  = nml_mat_new(m->num_rows, m->num_cols);
   int i,j;
-  for(i = 0; i < r->num_rows; i++) {
-    for(j = 0; j < r->num_cols; j++) {
+  const unsigned int num_rows = m->num_rows,
+    num_cols = m->num_cols;
+
+  #if 1
+  nml_mat *r  = nml_mat_new(num_rows, num_cols);
+  for(i = 0; i < num_rows; i++) {
+    for(j = 0; j < num_cols; j++) {
       r->data[i][j] = m->data[i][j];
     }
   }
+  #endif
+
+  /* Delegating on the efficient standard C library, the task to deal with
+   * memory operations */
+  memcpy(__NML_DATA(r), __NML_DATA(m), num_rows * num_cols);
   return r;
 }
 
@@ -292,9 +329,15 @@ nml_mat *nml_mat_fromfilef(FILE *f) {
   fscanf(f, "%d", &num_rows);
   fscanf(f, "%d", &num_cols);
   nml_mat *r = nml_mat_new(num_rows, num_cols);
-  for(i = 0; i < r->num_rows; i++) {
+  for(i = 0; i < num_rows; i++) {
     for(j = 0; j < num_cols; j++) {
-      fscanf(f, "%lf\t", &r->data[i][j]);
+      //fscanf(f, "%lf\t", &r->data[i][j]);
+      // new form, based in contiguous allocation
+      // this is the same than
+      //   &(r->__data[ i*num_cols + j ])
+      // or
+      //   r->__data + (i*num_cols + j)
+      fscanf(f, "%lf\t", __NML_DATA(r) + __NML_1D_INDEX(i, j, num_cols));
     }
   }
   return r;
@@ -341,8 +384,11 @@ inline int nml_mat_dim(nml_mat *A, int dim) {
 //
 // *****************************************************************************
 
-// Checks if two matrices have the same dimesions
-int nml_mat_eqdim(nml_mat *m1, nml_mat *m2) {
+// Checks if two matrices have the same dimensions
+// 
+// As this is a very short code, it worth to be implemented
+// as an inline function (C99).
+inline int nml_mat_eqdim(nml_mat *m1, nml_mat *m2) {
   return (m1->num_cols == m2->num_cols) &&
           (m1->num_rows == m2->num_rows);
 }
@@ -352,17 +398,28 @@ int nml_mat_eqdim(nml_mat *m1, nml_mat *m2) {
 // For exact equality use tolerance = 0.0
 int nml_mat_eq(nml_mat *m1, nml_mat *m2, double tolerance) {
   if (!nml_mat_eqdim(m1, m2)) {
-    return 0;
+    return FALSE;    //  will not cause overhead, as MACROS will be substituted at preprocessing time
   }
   int i, j;
+  #if 1
   for(i = 0; i < m1->num_rows; i++) {
     for(j = 0; j < m1->num_cols; j++) {
       if (fabs(m1->data[i][j] - m2->data[i][j]) > tolerance) {
-        return 0;
+        return FALSE;
       }
     }
   }
-  return 1;
+  #endif
+
+  // new form, based on contiguous allocation
+  const int num_rows = m1->num_rows, num_cols = m1->num_cols;
+  int k;
+  for (k = 0; k < num_rows * num_cols; k++) {
+    if (fabs(__NML_DATA(m1)[k] - __NML_DATA(m2)[k]) > tolerance) {
+      return FALSE;
+    }
+  }
+  return TRUE;
 }
 
 // *****************************************************************************
@@ -378,14 +435,15 @@ void nml_mat_print(nml_mat *matrix) {
 
 // Prints the matrix on the stdout (with a custom formatting for elements)
 void nml_mat_printf(nml_mat *matrix, const char *d_fmt) {
+  const int num_rows = __NML_ROWS(matrix), num_cols = __NML_COLS(matrix);
   int i, j;
+
   fprintf(stdout, "\n");
-  for(i = 0; i < matrix->num_rows; ++i) {
-    for(j = 0; j < matrix->num_cols; ++j) {
+  for(i = 0; i < num_rows; ++i) {
+    for(j = 0; j < num_cols; ++j) {
       //fprintf(stdout, d_fmt, matrix->data[i][j]);
 
-      // new form, based in contiguous container
-      const int num_cols = __NML_COLS(matrix);
+      // new form, based on contiguous allocation
       fprintf(stdout, d_fmt, __NML_ELEM(matrix, i, j, num_cols));      
     }
     fprintf(stdout, "\n");
@@ -409,7 +467,9 @@ void nml_mat_printf(nml_mat *matrix, const char *d_fmt) {
  * @return          the [i,j]-th element
  */
 inline double nml_mat_get(nml_mat *matrix, unsigned int i, unsigned int j) {
-  return matrix->data[i][j];
+  // new form, based in contiguous allocation
+  //return matrix->data[i][j];
+  return __NML_ELEM(matrix, i, j, matrix->num_cols);
 }
 
 /**
@@ -424,57 +484,92 @@ inline double nml_mat_get(nml_mat *matrix, unsigned int i, unsigned int j) {
  * @param   val     the value to what m[i,j] will be set
  */
 inline void nml_mat_set(nml_mat *matrix, unsigned int i, unsigned int j, double val) {
-  matrix->data[i][j] = val;
+  //matrix->data[i][j] = val;
+  // new form, based in contiguous allocation
+  __NML_ELEM(matrix, i, j, matrix->num_cols) = val;
 }
 
 // produces a column-matrix [Nx1] from the col-th column of m
 nml_mat *nml_mat_col_get(nml_mat *m, unsigned int col) {
-  if (col >= m->num_cols) {
-    NML_FERROR(CANNOT_GET_COLUMN, col, m->num_cols);
+  const unsigned int num_cols = m->num_cols,
+    num_rows = m->num_rows;
+
+  if (col >= num_cols) {
+    NML_FERROR(CANNOT_GET_COLUMN, col, num_cols);
     return NULL;
   }
-  nml_mat *r = nml_mat_new(m->num_rows, 1);
-  int j;
-  for(j = 0; j < r->num_rows; j++) {
-    r->data[j][0] = m->data[j][col];
+  nml_mat *r = nml_mat_new(num_rows, 1);
+  int i;
+  for(i = 0; i < num_rows; i++) {
+    //r->data[i][0] = m->data[i][col];
+    // new form, based in contiguous allocation
+    __NML_ELEM(r, i, 0, 1) = __NML_ELEM(m, i, col, num_cols);
   }
   return r;
 }
 
 // produces a row-matrix [1xN] from the row-th row of m
 nml_mat *nml_mat_row_get(nml_mat *m, unsigned int row) {
-  if (row >= m->num_rows) {
-    NML_FERROR(CANNOT_GET_ROW, row, m->num_rows);
+  const unsigned int num_rows = m->num_rows,
+    num_cols = m->num_cols;
+
+  if (row >= num_rows) {
+    NML_FERROR(CANNOT_GET_ROW, row, num_rows);
     return NULL;
   }
-  nml_mat *r = nml_mat_new(1, m->num_cols);
-  memcpy(r->data[0], m->data[row], m->num_cols * sizeof(*r->data[0]));
+  nml_mat *r = nml_mat_new(1, num_cols);
+
+  // Good idea: relying on the standard C library to deal with
+  //            memory operations
+  //memcpy(r->data[0], m->data[row], num_cols * sizeof(*r->data[0]));
+  // new form, based in contiguous allocation
+  memcpy(r->__data, m->__data + (row * num_cols), num_cols * sizeof(*r->__data));
   return r;
 }
 
 // Sets all elements of a matrix to a given value
-void nml_mat_all_set(nml_mat *matrix, double value) {
-  int i, j;
-  for(i = 0; i < matrix->num_rows; i++) {
-    for(j = 0; j < matrix->num_cols; j++) {
-      matrix->data[i][j] = value;
+void nml_mat_all_set(nml_mat *m, double val) {
+  const unsigned int num_rows = m->num_rows,
+    num_cols = m->num_cols;
+
+  /*int i, j;
+  for(i = 0; i < num_rows; i++) {
+    for(j = 0; j < num_cols; j++) {
+      m->data[i][j] = value;
     }
-  }
+  }*/
+
+  // Delegate to the well-designed & optimized standard C library, 
+  // the task of filling array
+  memset( __NML_DATA(m), val, num_rows * num_cols );
 }
 
 // Sets all elements of the matrix to given value
 int nml_mat_diag_set(nml_mat *m, double value) {
-  if (!m->is_square) {
+  if (!__NML_IS_SQUARE(m)) {
     NML_FERROR(CANNOT_SET_DIAG, value);
-    return 0;
+    return R_FAILURE;
   }
   int i;
-  for(i = 0; i < m->num_rows; i++) {
+  const int num_rows = __NML_ROWS(m);
+  for(i = 0; i < num_rows; i++) {
     m->data[i][i] = value;
+
+    // assigns:  m[i][j] <-- value
+    __NML_ELEM(m, i, i, num_rows) = value;
   }
   return 1;
 }
 
+/**
+ * Return a new (independent) matrix that is the result of multiplying a given
+ * row of the original matrix, by a scalar.
+ *
+ * @param   m    the original matrix
+ * @param   row  the index (zero-based) of the row to multiply
+ * @param   num  the scalar
+ * @return       the new matrix
+ */
 nml_mat *nml_mat_row_mult(nml_mat *m, unsigned int row, double num) {
   nml_mat *r = nml_mat_cp(m);
   if (!nml_mat_row_mult_r(r, row, num)) {
@@ -484,18 +579,42 @@ nml_mat *nml_mat_row_mult(nml_mat *m, unsigned int row, double num) {
   return r;
 }
 
-int nml_mat_row_mult_r(nml_mat *m, unsigned int row, double num) {
-  if (row>= m->num_rows) {
-    NML_FERROR(CANNOT_ROW_MULTIPLY, row, m->num_rows);
-    return R_FAILURE;
+/**
+ * Auxiliary function: Multiply a given row of a matrix, by a scalar. 
+ * The matrix will be overwritten.
+ *
+ * @param   m    the matrix
+ * @param   row  index of the row to be multiplied
+ * @param   num  the scalar
+ * @return       TRUE iff the operation succeeded
+ */
+bool nml_mat_row_mult_r(nml_mat *m, unsigned int row, double num) {
+  const unsigned int num_rows = m->num_rows,
+    num_cols = m->num_cols;
+
+  if (row >= num_rows) {
+    NML_FERROR(CANNOT_ROW_MULTIPLY, row, num_rows);
+    return FALSE;
   }
-  int i;
-  for(i=0; i < m->num_cols; i++) {
-    m->data[row][i] *= num;
+  int j;
+  for(j = 0; j < num_cols; j++) {
+    m->data[row][j] *= num;
+
+    // new form, based on contiguous allocation
+    __NML_ELEM(m, row, j, num_cols) *= num;
   }
-  return R_SUCCESS;
+  return TRUE;
 }
 
+/**
+ * Return a new (independent) matrix that is the result of multiplying a given
+ * column of the original matrix, by a scalar.
+ *
+ * @param   m    the original matrix
+ * @param   col  the index (zero-based) of the col to multiply
+ * @param   num  the scalar
+ * @return       the new matrix
+ */
 nml_mat *nml_mat_col_mult(nml_mat *m, unsigned int col, double num) {
   nml_mat *r = nml_mat_cp(m);
   if (!nml_mat_col_mult_r(r, col, num)) {
@@ -505,18 +624,38 @@ nml_mat *nml_mat_col_mult(nml_mat *m, unsigned int col, double num) {
   return r;
 }
 
-int nml_mat_col_mult_r(nml_mat *m, unsigned int col, double num) {
-  if (col>=m->num_cols) {
-    NML_FERROR(CANNOT_COL_MULTIPLY, col, m->num_cols);
-    return 0;
+/**
+ * Auxiliary function: Multiply a given column of a matrix, by a scalar. 
+ * The matrix will be overwritten.
+ *
+ * @param   m    the matrix
+ * @param   col  index of the column to be multiplied
+ * @param   num  the scalar
+ * @return       TRUE iff the operation succeeded
+ */
+bool nml_mat_col_mult_r(nml_mat *m, unsigned int col, double num) {
+  const unsigned int num_rows = __NML_ROWS(m),
+    num_cols = __NML_COLS(m);
+
+  if (col >= num_cols) {
+    NML_FERROR(CANNOT_COL_MULTIPLY, col, num_cols);
+    return FALSE;
   }
   int i;
-  for(i = 0; i < m->num_rows; i++) {
+  for(i = 0; i < num_rows; i++) {
     m->data[i][col] *= num;
+
+    // new form, based on contiguous allocation
+    __NML_ELEM(m, i, col, num_cols) *= num;
   }
-  return 1;
+  return TRUE;
 }
 
+
+/**
+ * Elementary row-operation. Adds to the row A[where][:] a multiple of the row A[row][:]
+ * This produces an independent matrix.
+ */
 nml_mat *nml_mat_row_addrow(nml_mat *m, unsigned int where, unsigned int row, double multiplier) {
   nml_mat *r = nml_mat_cp(m);
   if (!nml_mat_row_addrow_r(m, where, row, multiplier)) {
@@ -526,33 +665,54 @@ nml_mat *nml_mat_row_addrow(nml_mat *m, unsigned int where, unsigned int row, do
   return r;
 }
 
+/**
+ * Elementary row-operation. Adds to the row A[where][:] a multiple of the row A[row][:]
+ * The matrix will be overwritten.
+ */
 int nml_mat_row_addrow_r(nml_mat *m, unsigned int where, unsigned int row, double multiplier) {
 
   if (where >= m->num_rows || row >= m->num_rows) {
     NML_FERROR(CANNOT_ADD_TO_ROW, multiplier, row, where, m->num_rows);
-    return 0;
+    return FALSE;
   }
-  int i = 0;
-  for(i = 0; i < m->num_cols; i++) {
-    m->data[where][i] += multiplier * m->data[row][i];
+  int j = 0;
+  const int num_cols = __NML_COLS(m);
+  for(j = 0; j < num_cols; j++) {
+    m->data[where][j] += multiplier * m->data[row][j];
+
+    // new form, based on contiguous allocation
+    __NML_ELEM(m, where, j, num_cols) += multiplier * __NML_ELEM(m, row, j, num_cols);
   }
-  return 1;
+  return TRUE;
 }
 
+/**
+ * Multiply a matrix by a scalar.
+ * This produces an independent matrix.
+ */
 nml_mat *nml_mat_smult(nml_mat *m, double num) {
   nml_mat *r = nml_mat_cp(m);
   nml_mat_smult_r(r, num);
   return r;
 }
 
+/**
+ * Multiply a matrix by a scalar.
+ * Changes are made in-place, the matrix will be overwritten.
+ */
 int nml_mat_smult_r(nml_mat *m, double num) {
+  const unsigned int num_rows = __NML_ROWS(m),
+    num_cols = __NML_COLS(m);
   int i, j;
-  for(i = 0; i < m->num_rows; i++) {
-    for(j = 0; j < m->num_cols; j++) {
+  for(i = 0; i < num_rows; i++) {
+    for(j = 0; j < num_cols; j++) {
       m->data[i][j] *= num;
+
+      // new form, based on contiguous allocation
+      __NML_ELEM(m, i, j, num_cols) *= num;
     }
   }
-  return 1;
+  return TRUE;
 }
 
 // *****************************************************************************
@@ -560,6 +720,14 @@ int nml_mat_smult_r(nml_mat *m, double num) {
 // Modifying the matrix structure
 //
 // *****************************************************************************
+
+/**
+ * Remove column. Produces an independent matrix.
+ *
+ * @param   m       [description]
+ * @param   column  [description]
+ * @return          [description]
+ */
 nml_mat *nml_mat_col_rem(nml_mat *m, unsigned int column) {
   if(column >= m->num_cols) {
     NML_FERROR(CANNOT_REMOVE_COLUMN, column, m->num_cols);
@@ -577,6 +745,13 @@ nml_mat *nml_mat_col_rem(nml_mat *m, unsigned int column) {
   return r;
 }
 
+/**
+ * Remove row. Produces an independent matrix.
+ *
+ * @param   m    [description]
+ * @param   row  [description]
+ * @return       [description]
+ */
 nml_mat *nml_mat_row_rem(nml_mat *m, unsigned int row) {
   if (row >= m->num_rows) {
     NML_FERROR(CANNOT_REMOVE_ROW, row, m->num_rows);
@@ -595,6 +770,15 @@ nml_mat *nml_mat_row_rem(nml_mat *m, unsigned int row) {
   return r;
 }
 
+/**
+ * Swap two rows of a matrix.
+ * Produces an independent matrix.
+ *
+ * @param   m     [description]
+ * @param   row1  [description]
+ * @param   row2  [description]
+ * @return        [description]
+ */
 nml_mat *nml_mat_row_swap(nml_mat *m, unsigned int row1, unsigned int row2) {
   nml_mat *r = nml_mat_cp(m);
   if (!nml_mat_row_swap_r(r, row1, row2)) {
@@ -604,6 +788,15 @@ nml_mat *nml_mat_row_swap(nml_mat *m, unsigned int row1, unsigned int row2) {
   return r;
 }
 
+/**
+ * Swap two rows of a matrix.
+ * The matrix will be overwritten.
+ *
+ * @param   m     [description]
+ * @param   row1  [description]
+ * @param   row2  [description]
+ * @return        [description]
+ */
 int nml_mat_row_swap_r(nml_mat *m, unsigned int row1, unsigned int row2) {
   if (row1 >= m->num_rows || row2 >= m->num_rows) {
     NML_FERROR(CANNOT_SWAP_ROWS, row1, row2, m->num_rows);
@@ -615,6 +808,15 @@ int nml_mat_row_swap_r(nml_mat *m, unsigned int row1, unsigned int row2) {
   return 1;
 }
 
+/**
+ * Swap two columns of a matrix.
+ * Produces an independent matrix.
+ *
+ * @param   m     [description]
+ * @param   row1  [description]
+ * @param   row2  [description]
+ * @return        [description]
+ */
 nml_mat *nml_mat_col_swap(nml_mat *m, unsigned int col1, unsigned int col2) {
   nml_mat *r = nml_mat_cp(m);
   if (!nml_mat_col_swap_r(r, col1, col2)) {
@@ -624,6 +826,15 @@ nml_mat *nml_mat_col_swap(nml_mat *m, unsigned int col1, unsigned int col2) {
   return r;
 }
 
+/**
+ * Swap two columns of a matrix.
+ * Produces an independent matrix.
+ *
+ * @param   m     [description]
+ * @param   row1  [description]
+ * @param   row2  [description]
+ * @return        [description]
+ */
 int nml_mat_col_swap_r(nml_mat *m, unsigned int col1, unsigned int col2) {
   if (col1 >= m->num_cols || col2 >= m->num_rows) {
     NML_FERROR(CANNOT_SWAP_ROWS, col1, col2, m->num_cols);
