@@ -37,8 +37,6 @@ typedef bool_t bool;
       #define false FALSE
 #endif
 
-#define _max(a,b) ((a) >= (b) ? a : b)
-
 /**
  * Yoel.- 2022-04-25
  *
@@ -47,12 +45,12 @@ typedef bool_t bool;
  * Inspired in the gnu stdc name convention:
  * https://github.com/gcc-mirror/gcc/blob/d9375e490072d1aae73a93949aa158fcd2a27018/libstdc%2B%2B-v3/include/bits/stl_algo.h#L3858
  */
-#define __COLS(m) ((m)->num_cols)
-#define __ROWS(m) ((m)->num_rows)
-#define __DATA(m) ((m)->__data)
+#define __NML_COLS(m) ((m)->num_cols)
+#define __NML_ROWS(m) ((m)->num_rows)
+#define __NML_DATA(m) ((m)->__data)
 
 /**
- * this MACRO (not function) converts 2D indexes into a 1D contiguous index, by means of
+ * this is a MACRO (not a function) to convert 2D indexes into a 1D contiguous index, by means of
  *
  * [i,j] -> i * n + j
  *
@@ -60,11 +58,11 @@ typedef bool_t bool;
  * @param   j  column index
  * @param   n  2nd dimension: number of columns
  */
-#define __1D_INDEX(i, j, n) ((i)*(n) + (j))
+#define __NML_1D_INDEX(i, j, n) ((i)*(n) + (j))
 
 /**
  * It is equivalent to matrix->data[i][j], in 2D indexing
  */
-#define __ELEM(matrix, i, j) ((matrix)->__data[ __1D_INDEX(i, j, __COLS(matrix)) ])
+#define __NML_ELEM(matrix, i, j, num_cols) ((matrix)->__data[ __NML_1D_INDEX(i, j, num_cols) ])
 
 #endif

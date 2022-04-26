@@ -29,7 +29,7 @@ limitations under the License.
 
 #define CANNOT_SUBTRACT "Cannot subctract two matrices with different dimensions.\n"
 
-#define CANNOT_MULITPLY \
+#define CANNOT_MULTIPLY \
   "Cannot multiply two matrices where \
   the number of columns of the first one \
   is different than the number of rows of the second one.\n" \
@@ -37,6 +37,8 @@ limitations under the License.
 #define CANNOT_REMOVE_COLUMN "Cannot remove matrix column %d. The value should be less than %d.\n" 
 
 #define CANNOT_REMOVE_ROW "Cannot remove matrix row %d. The value should be less than %d.\n" 
+
+#define INVALID_ARGUMENT_INT "Invalid argument: %d\n"
 
 #define INVALID_ROWS \
   "Cannot create matrix with 0 number of rows. Aborting.\n" \
@@ -88,10 +90,10 @@ limitations under the License.
 #define CANNOT_GET_ROW \
       "Cannot get row (%d). The matrix has %d number of rows.\n" \
 
-#define INCONSITENT_ARRAY \
+#define INCONSISTENT_ARRAY \
       "Cannot found element %d in the array (NULL). Expected a total of : %d elements.\n"  \
 
-#define INCONSITENT_VARGS \
+#define INCONSISTENT_VARGS \
       "Cannot find element %d in the varargs. Expecteda total of : %d varargs.\n" \
 
 #define CANNOT_REF_MATRIX_DEGENERATE \
@@ -121,7 +123,14 @@ limitations under the License.
 //
 // *****************************************************************************
 
-// Dynamically allocates a new matrix struct
+/**
+ * Dynamically allocates a new matrix struct.
+ * The matrix will be initially populated with zeroes.
+ *
+ * @param   num_rows  number of rows of the new matrix
+ * @param   num_cols  number of cols of the new matrix
+ * @return            a pointer to the new matrix struct
+ */
 nml_mat *nml_mat_new(unsigned int num_rows, unsigned int num_cols) {
   if (num_rows == 0) {
     NML_ERROR(INVALID_ROWS);
@@ -132,7 +141,7 @@ nml_mat *nml_mat_new(unsigned int num_rows, unsigned int num_cols) {
     return NULL;
   }
   nml_mat *m = calloc(1, sizeof(*m));
-  NP_CHECK(m);
+  NP_CHECK(m);    // asserting the data was allocated
   
   m->num_rows = num_rows;
   m->num_cols = num_cols;
@@ -148,10 +157,47 @@ nml_mat *nml_mat_new(unsigned int num_rows, unsigned int num_cols) {
 
   // new block, to store data contiguously
   m->__data = calloc(m->num_rows * m->num_cols, sizeof(*m->__data));
-  NP_CHECK(m->__data);
+  NP_CHECK(m->__data);    // asserting the data was allocated
   return m;
 }
 
+/**
+ * Free a matrix structure.
+ *
+ * @param  matrix  the matrix to be freed.
+ */
+void nml_mat_free(nml_mat *matrix) {
+  int i;
+  for(i = 0; i < matrix->num_rows; ++i) {
+    free(matrix->data[i]);
+    // Yoel.-
+    matrix->data[i] = NULL;
+  }
+  free(matrix->data);
+  free(matrix);
+  // Yoel.-  It is a good practice to set the unused pointers to NULL.
+  matrix->data = NULL;
+  matrix = NULL;
+}
+
+/**
+ * Dynamically allocates a new square matrix struct.
+ * This is similar to `nml_matrix_new()`, but the matrix is square 
+ * (number of rows is equal than the number of cols)
+ */
+nml_mat *nml_mat_sqr(unsigned int size) {
+  return nml_mat_new(size, size);
+}
+
+/**
+ * Create a new square matrix, with random elements.
+ * The elements will be double in the range [min, max)
+ *
+ * @param   size  the size of the matrix
+ * @param   min   lower bound for the random numbers
+ * @param   max   upper bound for the random numbers
+ * @return        a pointer to the created matrix struct
+ */
 nml_mat *nml_mat_rnd(unsigned int num_rows, unsigned int num_cols, double min, double max) {
   nml_mat *r = nml_mat_new(num_rows, num_cols);
   int i, j;
@@ -159,35 +205,48 @@ nml_mat *nml_mat_rnd(unsigned int num_rows, unsigned int num_cols, double min, d
     for(j = 0; j < num_cols; j++) {
       r->data[i][j] = nml_rand_interval(min, max);
 
-      r->__data[ __1D_INDEX(i,j,r->num_cols) ] = nml_rand_interval(min, max);
-      __ELEM(r, i, j) = nml_rand_interval(min, max);
+      // new form
+      const int num_cols = __NML_COLS(r);
+      __NML_ELEM(r, i, j, num_cols) = nml_rand_interval(min, max);
     }
   }
   return r;
 }
 
-// Dynamically allocates a new matrix struct
-// The matrix is square (number of rows is equl with the number of cols)
-nml_mat *nml_mat_sqr(unsigned int size) {
-  return nml_mat_new(size, size);
-}
-
+/**
+ * Create a new square matrix, with random elements.
+ * The elements will be double in the range [min, max)
+ *
+ * @param   size  the size of the matrix
+ * @param   min   lower bound for the random numbers
+ * @param   max   upper bound for the random numbers
+ * @return        a pointer to the created matrix struct
+ */
 nml_mat *nml_mat_sqr_rnd(unsigned int size, double min, double max) {
   return nml_mat_rnd(size, size, min, max);
 }
 
-// Dynamically allocates a a new matrix struct
-// The resulting matrix is an ID matrix (I)
-// I has 1.0 on the first diagonal
-// I is square
+/**
+ * Dynamically allocates a new identity matrix.
+ * The resulting matrix will be sqare, with 1's in the main diagonal
+ * and zero otherwise.
+ *
+ * @param   size  the size of the square matrix
+ * @return        identity matrix
+ */
 nml_mat *nml_mat_eye(unsigned int size) {
   nml_mat *r = nml_mat_new(size, size);
   int i;
   for(i = 0; i < r->num_rows; i++) {
     r->data[i][i] = 1.0;
+    // new form
+    const int num_cols = __NML_COLS(r);
+    __NML_ELEM(r, i, i, num_cols) = 1.0;
   }
   return r;
 }
+
+// --- TODO ---
 
 // Dynamically allocates a new matrix struct
 // Initialise the matrix by reading values from a vector
@@ -242,27 +301,38 @@ nml_mat *nml_mat_fromfilef(FILE *f) {
 }
 
 /**
- * Frees a matrix structure
+ * Return the number of rows of matrix.
  *
- * @param  matrix  the matrix to be freed.
- *
- * Yoel.- It is a good practice to assign the freed pointer to `NULL`.
- *        This way, even an unintentional access to the value of the pointer
- *        will read `NULL`, instead of the previous value of it (leading to 
- *        potentially dangerous results)
+ * @param   m  pointer to matrix struct
+ * @return     number of rows
  */
-void nml_mat_free(nml_mat *matrix) {
-  int i;
-  for(i = 0; i < matrix->num_rows; ++i) {
-    free(matrix->data[i]);
-    // Yoel.-
-    matrix->data[i] = NULL;
+inline int nml_mat_num_rows(nml_mat *A) { return __NML_ROWS(A); }
+
+/**
+ * Return the number of cols of matrix.
+ *
+ * @param   m  pointer to matrix struct
+ * @return     number of cols
+ */
+inline int nml_mat_num_cols(nml_mat *A) { return __NML_COLS(A); }
+
+/**
+ * Number of elements in the i-th dimension
+ *
+ * - dim 1: number of rows
+ * - dim 2: number of columns
+ */
+inline int nml_mat_dim(nml_mat *A, int dim) {
+  if (dim == 1) {
+    return __NML_ROWS(A);
   }
-  free(matrix->data);
-  free(matrix);
-  // Yoel.-
-  matrix->data = NULL;
-  matrix = NULL;
+  else if (dim == 2) {
+    return __NML_COLS(A);
+  }
+  else {
+    NML_FERROR(INVALID_ARGUMENT_INT, dim);
+    return -1;
+  }
 }
 
 // *****************************************************************************
@@ -312,10 +382,11 @@ void nml_mat_printf(nml_mat *matrix, const char *d_fmt) {
   fprintf(stdout, "\n");
   for(i = 0; i < matrix->num_rows; ++i) {
     for(j = 0; j < matrix->num_cols; ++j) {
-      fprintf(stdout, d_fmt, matrix->data[i][j]);
+      //fprintf(stdout, d_fmt, matrix->data[i][j]);
 
-      // new way, based in contiguous container
-      fprintf(stdout, d_fmt, __ELEM(matrix, i, j));      
+      // new form, based in contiguous container
+      const int num_cols = __NML_COLS(matrix);
+      fprintf(stdout, d_fmt, __NML_ELEM(matrix, i, j, num_cols));      
     }
     fprintf(stdout, "\n");
   }
@@ -585,7 +656,7 @@ nml_mat *nml_mat_cath(unsigned int mnum, nml_mat **marr) {
   ncols = marr[0]->num_cols;
   for(k = 1; k < mnum; k++) {
     if (NULL == marr[k]) {
-      NML_FERROR(INCONSITENT_ARRAY, k, mnum);
+      NML_FERROR(INCONSISTENT_ARRAY, k, mnum);
       return NULL;
     }
     if (lrow != marr[k]->num_rows) {
@@ -632,7 +703,7 @@ nml_mat *nml_mat_catv(unsigned int mnum, nml_mat **marr) {
   numrows = 0;
   for(i = 0; i < mnum; i++) {
     if (NULL==marr[i]) {
-      NML_FERROR(INCONSITENT_ARRAY, i, mnum);
+      NML_FERROR(INCONSISTENT_ARRAY, i, mnum);
       return NULL;
     }
     if (lcol != marr[i]->num_cols) {
@@ -717,7 +788,7 @@ int nml_mat_sub_r(nml_mat *m1, nml_mat *m2) {
 
 nml_mat *nml_mat_dot(nml_mat *m1, nml_mat *m2) {
   if (!(m1->num_cols == m2->num_rows)) {
-    NML_ERROR(CANNOT_MULITPLY);
+    NML_ERROR(CANNOT_MULTIPLY);
     return NULL;
   }
   int i, j, k;

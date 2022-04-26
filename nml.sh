@@ -132,8 +132,10 @@ function tests {
   echo -e "${YELLOW}Compiling Tests:${NC}"
   ls ${TESTS}/*.c | while read file ;
     do 
-      echo -e "\t$file -> ${file%%.*}.ex${NC}"
-      ${CC} ${CCFLAGS_EXAMPLES} ${file} ${LIBFLAGS} -L ./${TESTS}/lib -l${LIB_NAME_SIMPLE} -o ${file%%.*}.ex
+      if [[ $file == *test1.c ]]; then 
+        echo -e "\t$file -> ${file%%.*}.ex${NC}"
+        ${CC} ${CCFLAGS_EXAMPLES} ${file} ${LIBFLAGS} -L ./${TESTS}/lib -l${LIB_NAME_SIMPLE} -o ${file%%.*}.ex
+      fi
     done
   : '
   echo -e "${YELLOW}Running Tests:${NC}"

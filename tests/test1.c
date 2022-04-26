@@ -4,19 +4,36 @@
 #include <math.h>
 
 #include "lib/nml.h"
+#include "lib/nml_def.h"
 #include "nml_test.h"
 
 #define TEST_TOLERANCE 0.0001
 
 int main(int argc, char *argv[]) {
     
-    printf("Hello World\n");
-    int a = 1, b=2;
-    printf("max(%d, %d) = %d\n", a, b, _max(a,b));
+    // zeroes matrix
+    nml_mat *A = nml_mat_new(3,4);
+    nml_mat_printf(A, "%10.4lf  ");
 
-    bool A;
-    A = TRUE;
-    printf("A: %d\n", A);
+    // eye matrix
+    nml_mat *B = nml_mat_eye(4);
+    printf("B: (%d) x (%d)\n", 
+        nml_mat_dim(B, 1),
+        nml_mat_dim(B, 2)
+        );
+    printf("B: (%d) x (%d)\n", 
+        nml_mat_num_rows(B),
+        nml_mat_num_cols(B)
+        );
+    nml_mat_printf(B, "%10.4lf  ");
+
+    // random matrix
+    nml_mat *C = nml_mat_rnd(3, 4, -1.0, +1.0);
+    nml_mat_printf(C, "%10.4lf  ");    
+
+    nml_mat_free(A);
+    nml_mat_free(B);
+    nml_mat_free(C);
 
     /*FILE *t_file = fopen(argv[1], "r");
     if (NULL == t_file) {
