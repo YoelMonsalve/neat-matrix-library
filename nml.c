@@ -881,14 +881,14 @@ nml_mat *nml_mat_col_swap(nml_mat *m, unsigned int col1, unsigned int col2) {
  */
 int nml_mat_col_swap_r(nml_mat *m, unsigned int col1, unsigned int col2) {
   
+  const int num_rows = __NML_ROWS(m), 
+    num_cols = __NML_COLS(m);
+  
   if (col1 == col2) { 
     // if col1 == col2, nothing to do
     return TRUE; 
   }
 
-  const int num_rows = __NML_ROWS(m), 
-    num_cols = __NML_COLS(m);
-  
   if (col1 >= num_cols || col2 >= num_rows) {
     NML_FERROR(CANNOT_SWAP_ROWS, col1, col2, num_cols);
     return FALSE;
@@ -907,7 +907,7 @@ int nml_mat_col_swap_r(nml_mat *m, unsigned int col1, unsigned int col2) {
   int i;
   for (i = 0; i < num_rows; i++) {
     nml_swap( __NML_DATA(m) + __NML_1D_INDEX(i, col1, num_cols),    // i.e.,  m->__data + (i*num_cols + col1),
-                                                                    // but will not incur in overhead as it will be replaced at preprocessing time
+                                                                    // but not incurring in overhead as it will be replaced at preprocessing time
       __NML_DATA(m) + __NML_1D_INDEX(i, col2, num_cols)
       );
   }
@@ -1237,46 +1237,68 @@ double nml_mat_trace(nml_mat* m) {
 //
 // *****************************************************************************
 
-// Finds the first non-zero element on the col column, under the row row.
-// This is used to determine the pivot in gauss Elimination
-// If not pivot is found, returns -1
+/**
+ * Find the first non-zero element in the column `col`, and on or under the row `row`.
+ * This is used to determine the pivot in Gauss elimination.
+ * If no pivot is found, returns -1
+ */
 int _nml_mat_pivotidx(nml_mat *m, unsigned int col, unsigned int row) {
   // No validations are made, this is an API Method
   int i;
-  for(i = row; i < m->num_rows; i++) {
-    if (fabs(m->data[i][col]) > NML_MIN_COEF) {
+  const unsigned int num_rows = __NML_ROWS(m),
+    num_cols = __NML_COLS(m);
+  for (i = row; i < num_rows; i++) {
+    //if (fabs(m->data[i][col]) > NML_MIN_COEF) {
+    if (__NML_ELEM(m, i, col, num_cols) > NML_MIN_COEF) {
       return i;
     }
   }
   return -1;
 }
 
-// Find the max element from the column "col" under the row "row"
-// This is needed to pivot in Gauss-Jordan elimination
-// If pivot is not found, return -1
+/**
+ * Find the element with the max absolute value in the column `col`, 
+ * and on or under the row `row`.
+ * This is used to determine the pivot in Gauss elimination.
+ * If no pivot is found, returns -1
+ */
 int _nml_mat_pivotmaxidx(nml_mat *m, unsigned int col, unsigned int row) {
-  int i, maxi;
-  double micol;
+  int i, max_i;
+  double pivot;     //micol;     // `micol`?   maybe you mean `pivot`?
   double max = fabs(m->data[row][col]);
-  maxi = row;
-  for(i = row; i < m->num_rows; i++) {
-    micol = fabs(m->data[i][col]);
-    if (micol>max) {
-      max = micol;
-      maxi = i;
+  const int num_rows = __NML_ROWS(m), 
+    num_cols = __NML_COLS(m);
+
+  max_i = row;
+  for(i = row + 1; i < num_rows; i++) {    // this should be for i > row, only
+    //pivot = fabs(m->data[i][col]);
+    pivot = fabs(__NML_ELEM(m, i, col, num_cols));    // i.e., fabs( m[i, col] )
+    if (pivot > max) {
+      max = pivot;
+      max_i = i;
     }
   }
-  return (max < NML_MIN_COEF) ? -1 : maxi;
+  return (max < NML_MIN_COEF) ? -1 : max_i;
 }
 
-// Retrieves the matrix in Row Echelon form using Gauss Elimination
+/**
+ * Retrieves the matrix in Row Echelon form using Gauss Elimination
+ *
+ * @param   m  the argument matrix
+ * @return     the matrix reduced to its Row Echelon form
+ */
 nml_mat *nml_mat_ref(nml_mat *m) {
-  nml_mat *r = nml_mat_cp(m);
+
+  const int num_cols = __NML_COLS(m);
   int i, j, k, pivot;
-  j = 0, i = 0;
-  while(j < r->num_cols && i < r->num_cols) {
+  double coef;
+
+  i = j = 0;
+  nml_mat *r = nml_mat_cp(m);
+  while (j < num_cols && i < num_cols) {
     // Find the pivot - the first non-zero entry in the first column of the matrix
-    pivot = _nml_mat_pivotidx(r, j, i);
+    //pivot = _nml_mat_pivotidx(r, j, i);
+    pivot = _nml_mat_pivotmaxidx(r, j, i);
     if (pivot<0) {
       // All elements on the column are zeros
       // We move to the next column without doing anything
@@ -1285,15 +1307,18 @@ nml_mat *nml_mat_ref(nml_mat *m) {
     }
     // We interchange rows moving the pivot to the first row that doesn't have
     // already a pivot in place
-    if (pivot!=i) {
+    if (pivot != i) {
       nml_mat_row_swap_r(r, i, pivot);
     }
     // Multiply each element in the pivot row by the inverse of the pivot
-    nml_mat_row_mult_r(r, i, 1/r->data[i][j]);
+    //nml_mat_row_mult_r(r, i, 1/r->data[i][j]);
+    nml_mat_row_mult_r(r, i, 1.0 / __NML_ELEM(r, i, j, num_cols));
+    
     // We add multiplies of the pivot so every element on the column equals 0
     for(k = i+1; k < r->num_rows; k++) {
-      if (fabs(r->data[k][j]) > NML_MIN_COEF) {
-        nml_mat_row_addrow_r(r, k, i, -(r->data[k][j]));
+      coef = __NML_ELEM(r, k, j, num_cols);
+      if (fabs(coef) > NML_MIN_COEF) {
+        nml_mat_row_addrow_r(r, k, i, -coef);
       } 
     }
     i++;
@@ -1302,31 +1327,36 @@ nml_mat *nml_mat_ref(nml_mat *m) {
   return r;
 }
 
-// Retrieves the matrix in Reduced Row Echelon using Guass-Jordan Elimination
+/** 
+ * Retrieves the matrix in Reduced Row Echelon using Gauss-Jordan Elimination 
+ */
 nml_mat *nml_mat_rref(nml_mat *m) {
+  
+  const int num_rows = __NML_ROWS(m),
+    num_cols = __NML_COLS(m);
+  int i, j, k, pivot;
+
   nml_mat* r = nml_mat_cp(m);
-  int i,j,k,pivot;
-  i = 0;
-  j = 0;
-  while(j < r->num_cols && i < r->num_rows) {
+  i = j = 0;
+  while (j < num_cols && i < num_rows) {
     // We find the pivot, the maximum row id (fabs) in the column
     pivot = _nml_mat_pivotmaxidx(r, j, i);
-    if (pivot<0) {
+    if (pivot < 0) {
       // No pivot, we change columns
       j++;
       continue;
     }
     // We interchange rows to out the pivot row into the 
     // desired position
-    if (pivot!=i) {
+    if (pivot != i) {
       nml_mat_row_swap_r(r, i, pivot);
     }
     // We create 1 in the pivot position
-    nml_mat_row_mult_r(r, i, 1/r->data[i][j]);
+    nml_mat_row_mult_r(r, i, 1.0 / __NML_ELEM(r, i, j, num_cols));
      // We put zeros on the colum with the pivot
-    for(k = 0; k < r->num_rows; k++) {
-      if (!(k==i)) {
-        nml_mat_row_addrow_r(r, k, i, -(r->data[k][j]));
+    for (k = 0; k < num_rows; k++) {
+      if (k != i) {
+        nml_mat_row_addrow_r(r, k, i, - __NML_ELEM(r, k, j, num_cols) );
       }
     }
     i++;
@@ -1357,7 +1387,21 @@ int _nml_mat_absmaxr(nml_mat *m, unsigned int k) {
   return maxIdx;
 }
 
-// Allocates memory for a new nml_mat_lup structure
+/**
+ * Yoel.- [2021.04.28]
+ * I believe, that `_nml_mat_absmaxr(m,k)` will produce the same than
+ * `_nml_mat_pivotmaxidx(m,k,k)`
+ */
+
+/**
+ * Allocates memory for a new nml_mat_lup structure
+ *
+ * @param   L                 lower triangular matrix
+ * @param   U                 upper triangular matrix
+ * @param   P                 permutation matrix
+ * @param   num_permutations  number of permutations
+ * @return                    pointer to LUP structure allocated
+ */
 nml_mat_lup *nml_mat_lup_new(nml_mat *L, nml_mat *U, nml_mat *P, unsigned int num_permutations) {
   nml_mat_lup *r = malloc(sizeof(*r));
   NP_CHECK(r);
@@ -1367,6 +1411,10 @@ nml_mat_lup *nml_mat_lup_new(nml_mat *L, nml_mat *U, nml_mat *P, unsigned int nu
   r->num_permutations = num_permutations;
   return r;
 }
+
+/**
+ * Free a LUP structure
+ */
 void nml_mat_lup_free(nml_mat_lup* lu) {
   nml_mat_free(lu->P);
   nml_mat_free(lu->L);
@@ -1374,39 +1422,54 @@ void nml_mat_lup_free(nml_mat_lup* lu) {
   free(lu);
 }
 
+/**
+ * Print a LUP structure
+ */
 void nml_mat_lup_print(nml_mat_lup *lu) {
   nml_mat_print(lu->L);
   nml_mat_print(lu->U);
   nml_mat_print(lu->P);
 }
 
+/**
+ * Print a LUP structure, with format
+ */
 void nml_mat_lup_printf(nml_mat_lup *lu, const char *fmt) {
   nml_mat_printf(lu->L, fmt);
   nml_mat_printf(lu->U, fmt);
   nml_mat_printf(lu->P, fmt);
 }
 
+/**
+ * LU(P) factorization of a matrix.
+ *
+ * @param   m  the matrix
+ * @return     pointer to a LUP structure.
+ */
 nml_mat_lup *nml_mat_lup_solve(nml_mat *m) {
-  if (!m->is_square) {
-    NML_FERROR(CANNOT_LU_MATRIX_SQUARE, m->num_rows, m-> num_cols);
-    return NULL;
-  }
-  nml_mat *L = nml_mat_new(m->num_rows, m->num_rows);
-  nml_mat *U = nml_mat_cp(m);
-  nml_mat *P = nml_mat_eye(m->num_rows);
 
+  const int num_rows = __NML_ROWS(m),
+    num_cols = __NML_COLS(m);
   int j,i, pivot;
   unsigned int num_permutations = 0;
-  double mult;
+  double lambda;
+  
+  if ( __NML_IS_SQUARE(m) ) {
+    NML_FERROR(CANNOT_LU_MATRIX_SQUARE, num_rows, num_cols);
+    return NULL;
+  }
+  nml_mat *L = nml_mat_new(num_rows, num_rows);
+  nml_mat *U = nml_mat_cp(m);
+  nml_mat *P = nml_mat_eye(num_rows);
 
-  for(j = 0; j < U->num_cols; j++) {
+  for(j = 0; j < num_cols; j++) {
     // Retrieves the row with the biggest element for column (j)
     pivot = _nml_mat_absmaxr(U, j);
     if (fabs(U->data[pivot][j]) < NML_MIN_COEF) {
       NML_ERROR(CANNOT_LU_MATRIX_DEGENERATE);
       return NULL;
     }
-    if (pivot!=j) {
+    if (pivot != j) {
       // Pivots LU and P accordingly to the rule
       nml_mat_row_swap_r(U, j, pivot);
       nml_mat_row_swap_r(L, j, pivot);
@@ -1415,12 +1478,24 @@ nml_mat_lup *nml_mat_lup_solve(nml_mat *m) {
       // determinant sign afterwards
       num_permutations++;
     }
-    for(i = j+1; i < U->num_rows; i++) {
-      mult = U->data[i][j] / U->data[j][j];
+    for(i = j+1; i < num_rows; i++) {
+      //lambda = U->data[i][j] / U->data[j][j];    // lambda: multiplier
+      //
+      // new form
+      // lambda: this is the multiplier for making U[i,j] to be zero
+      lambda = __NML_ELEM(U, i, j, num_cols) / __NML_ELEM(U, j, j, num_cols);
+
       // Building the U upper rows
-      nml_mat_row_addrow_r(U, i, j, -mult);
+      nml_mat_row_addrow_r(U, i, j, -lambda);
       // Store the multiplier in L
-      L->data[i][j] = mult;
+      //L->data[i][j] = lambda;
+      //
+      //new form
+      __NML_ELEM(L, i, j, num_rows) = lambda;    
+      //                  ~~~~~~~~
+      //                       ^_________________ L is (m x m), if  is (m x n)
+      //     ^            
+      //     |___________________________________ replaces L->data[i][j]
     }
   }
   nml_mat_diag_set(L, 1.0);
@@ -1433,12 +1508,20 @@ nml_mat_lup *nml_mat_lup_solve(nml_mat *m) {
 // the sign is -1 if the number of permutations is odd
 // the sign is +1 if the number of permutations is even
 double nml_mat_det(nml_mat_lup* lup) {
+  const int num_rows = __NML_ROWS(lup->U),
+    num_cols = __NML_COLS(lup->U);
   int k;
+
   int sign = (lup->num_permutations%2==0) ? 1 : -1;
   nml_mat *U = lup->U;
   double product = 1.0;
-  for(k = 0; k < U->num_rows; k++) {
-    product *= U->data[k][k];
+  for(k = 0; k < num_rows; k++) {
+    //product *= U->data[k][k];
+    //
+    // new form
+    product *= __NML_ELEM(U, k, k, num_cols);
+    //         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //                     ^________________ U[k][k]
   }
   return product * sign;
 }
@@ -1448,9 +1531,13 @@ nml_mat *nml_mat_lu_get(nml_mat_lup* lup) {
   nml_mat *r = nml_mat_cp(lup->U);
   // Copy L (without first diagonal in result)
   int i, j;
-  for(i = 1; i < lup->L->num_rows; i++) {
+  nml_mat *L = lup->L;
+  for(i = 1; i < L->num_rows; i++) {
     for(j = 0; j < i; j++) {
-      r->data[i][j] = lup->L->data[i][j];
+      //r->data[i][j] = L->data[i][j];
+      //
+      // new form
+      __NML_ELEM(r, i, j, L->num_cols) = __NML_ELEM(L, i, j, L->num_cols);
     }
   }
   return r;
@@ -1492,11 +1579,11 @@ nml_mat *nml_ls_solvefwd(nml_mat *L, nml_mat *b) {
 }
 
 
-// Back substition algorithm
-// Solves the linear system U *x = b
+// Back substitution algorithm
+// Solves the linear system U*x = b
 //
 // U is an upper triangular matrix of size NxN
-// B is a column matrix of size Nx1
+// b is a column matrix of size Nx1
 // x is the solution column matrix of size Nx1
 //
 // Note in case U is not an upper triangular matrix, the algorithm will try to
