@@ -23,11 +23,12 @@ limitations under the License.
 
 #include "nml.h"
 
+/** errors/exceptions */
 #define DEFAULT_VALUE 0.0
 
 #define CANNOT_ADD "Cannot add two matrices with different dimensions.\n"
 
-#define CANNOT_SUBTRACT "Cannot subctract two matrices with different dimensions.\n"
+#define CANNOT_SUBSTRACT "Cannot substract two matrices with different dimensions.\n"
 
 #define CANNOT_MULTIPLY \
   "Cannot multiply two matrices where \
@@ -67,10 +68,13 @@ limitations under the License.
       "Cannot add %2.2f x (row=%d) to row=%d. Total number of rows is: %d.\n" \
 
 #define CANNOT_LU_MATRIX_SQUARE \
-      "Canot LU. Matrix (%d, %d) needs to be square.\n" \
+      "Canot LU. Matrix (%d, %d) needs to be square.\n"
 
 #define CANNOT_LU_MATRIX_DEGENERATE \
-      "Cannot LU. Matrix is degenerate or almost degenerate.\n" \
+      "Cannot LU. Matrix is degenerate or almost degenerate.\n"
+
+#define INCONSISTENT_SYSTEM \
+      "Cannot LU. Matrix is degenerate or almost degenerate.\n"
 
 #define CANNOT_SOLVE_LIN_SYS_INVALID_B \
       "Cannot solve system. b[%d][%d] should have size b[%d][%d].\n" \
@@ -105,16 +109,19 @@ limitations under the License.
       "Invalid matrix file: %s. Cannot read data.\n" \
 
 #define VECTOR_J_DEGENERATE \
-      "Vector on colum %d is generate or near degenerate. Cannot proceed further.\n" \
+      "Vector on colum %d is generate or near degenerate. Cannot proceed further.\n"
 
 #define CANNOT_QR_NON_SQUARE \
-      "We cannot QA non-square matrix[%d, %d].\n" \
+      "We cannot QA non-square matrix[%d, %d].\n"
 
 #define CANNOT_COLUMN_L2NORM \
-      "Cannot get column (%d). The matrix has %d numbers of columns.\n" \
+      "Cannot get column (%d). The matrix has %d numbers of columns.\n"
 
 #define CANNOT_VECT_DOT_DIMENSIONS \
-      "The two vectors have different dimensions: %d and %d.\n" \
+      "The two vectors have different dimensions: %d and %d.\n"
+
+#define MATRIX_NOT_SQUARE \
+      "Matrix (%d, %d) is not square.\n"
        
 
 // *****************************************************************************
@@ -1130,7 +1137,7 @@ nml_mat *nml_mat_sub(nml_mat *m1, nml_mat *m2) {
  */
 int nml_mat_sub_r(nml_mat *m1, nml_mat *m2) {
   if (!nml_mat_eqdim(m1, m2)) {
-    NML_ERROR(CANNOT_SUBTRACT);
+    NML_ERROR(CANNOT_SUBSTRACT);
     return 0;
   }
   #if 1
@@ -1521,7 +1528,8 @@ double nml_mat_det(nml_mat_lup* lup) {
     // new form
     product *= __NML_ELEM(U, k, k, num_cols);
     //         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //                     ^________________ U[k][k]
+    //                      ^
+    //                      |_______________ U[k][k]
   }
   return product * sign;
 }
@@ -1549,11 +1557,11 @@ nml_mat *nml_mat_lu_get(nml_mat_lup* lup) {
 //
 // *****************************************************************************
 
-// Forward substitution algorithm
-// Solves the linear system L * x = b
+// Forward substitution algorithm.
+// Solves the linear system L*x = b
 //
 // L is lower triangular matrix of size NxN
-// B is column matrix of size Nx1
+// b is column matrix of size Nx1
 // x is the solution column matrix of size Nx1
 //
 // Note: In case L is not a lower triangular matrix, the algorithm will try to
@@ -1565,21 +1573,53 @@ nml_mat *nml_mat_lu_get(nml_mat_lup* lup) {
 //
 // Note: This function is usually used with an L matrix from a LU decomposition
 nml_mat *nml_ls_solvefwd(nml_mat *L, nml_mat *b) {
-  nml_mat* x = nml_mat_new(L->num_cols, 1);
-  int i,j;
-  double tmp;
-  for(i = 0; i < L->num_cols; i++) {
+  const int num_rows = __NML_ROWS(L),
+    num_cols = __NML_COLS(L);
+
+  // assuring L is square
+  if (num_rows != num_cols) {
+    NML_FERROR(MATRIX_NOT_SQUARE, num_rows, num_cols);
+  }
+
+  nml_mat* x = nml_mat_new(num_cols, 1);
+  int i, j;
+  double tmp, diag;
+  for(i = 0; i < num_cols; i++) {
+
+    /* 
+     * x[i] = ( b[i] -  sum  { L[i][j] * x[j] } ) / L[i][i]
+     *                 j < i
+     */
+    #if V1    // version 1
     tmp = b->data[i][0];
     for(j = 0; j < i ; j++) {
       tmp -= L->data[i][j] * x->data[j][0];
     }
     x->data[i][0] = tmp / L->data[i][i];
+    #endif
+
+    // now, traslating into version 2, with the new form
+    #if V2
+    tmp = __NML_ELEM2(b, i, 0);    // b[i];
+    for(j = 0; j < i ; j++) {
+      tmp -= __NML_ELEM2(L, i, j) * __NML_ELEM2(x, j, 0);    //  -  sum  { L[i][j] * x[j] }
+                                                             //   (j < i)
+    }
+
+    // assuring diagonal element is not zero
+    diag = __NML_ELEM2(L, i, i);
+    if (fabs(diag) < NML_MIN_COEF) {
+      NML_ERROR(INCONSISTENT_SYSTEM);
+      return NULL;
+    }
+    __NML_ELEM2(x, i, 0) = tmp / diag;    // x[i] = tmp / L[i][i]
+    #endif    
   }
   return x;
 }
 
 
-// Back substitution algorithm
+// Back substitution algorithm.
 // Solves the linear system U*x = b
 //
 // U is an upper triangular matrix of size NxN
@@ -1593,31 +1633,65 @@ nml_mat *nml_ls_solvefwd(nml_mat *L, nml_mat *b) {
 // Note: In case any of the diagonal elements (U[i][i]) are 0 the system cannot
 // be solved
 nml_mat *nml_ls_solvebck(nml_mat *U, nml_mat *b) {
+  const int num_rows = __NML_ROWS(U),
+    num_cols = __NML_COLS(U);
+
+  // assuring L is square
+  if (num_rows != num_cols) {
+    NML_FERROR(MATRIX_NOT_SQUARE, num_rows, num_cols);
+  }
+
   nml_mat *x = nml_mat_new(U->num_cols, 1);
-  int i = U->num_cols, j;
-  double tmp;
-  while(i-->0) {
+  int i, j;
+  double tmp, diag;
+  for (i = num_cols - 1; i >= 0; i--) {
+    /* 
+     * x[i] = ( b[i] -  sum  { U[i][j] * x[j] } ) / U[i][i]
+     *                 j > i
+     */
+    #if V1    // version 1
     tmp = b->data[i][0];
     for(j = i; j < U->num_cols; j++) {
       tmp -= U->data[i][j] * x->data[j][0];
     }
     x->data[i][0] = tmp / U->data[i][i];
+    #endif
+
+    // now, traslating into version 2, with the new form
+    #if V2
+    tmp = __NML_ELEM2(b, i, 0);    // b[i];
+    for(j = 0; j < i ; j++) {
+      tmp -= __NML_ELEM2(U, i, j) * __NML_ELEM2(x, j, 0);    //  -  sum  { U[i][j] * x[j] }
+                                                             //   (j < i)
+    }
+
+    // assuring diagonal element is not zero
+    diag = __NML_ELEM2(U, i, i);    // U[i][i]
+    if (fabs(diag) < NML_MIN_COEF) {
+      NML_ERROR(INCONSISTENT_SYSTEM);
+      return NULL;
+    }
+    __NML_ELEM2(x, i, 0) = tmp / diag;
+    #endif    
   }
   return x;
 }
 
-// A[n][n] is a square matrix
-// m contains matrices L, U, P for A[n][n] so that P*A = L*U
-//
-// The linear system is:
-// A*x=b  =>  P*A*x = P*b  =>  L*U*x = P*b  =>
-// (where b is a matrix[n][1], and x is a matrix[n][1])
-//
-// if y = U*x , we solve two systems:
-//    L * y = P b (forward substition)
-//    U * x = y (backward substition)
-//
-// We obtain and return x
+/**
+ * A[n][n] is a square matrix
+ * m contains matrices L, U, P for A[n][n] so that P*A = L*U
+ * 
+ * The linear system is:
+ * 
+ *   A*x=b  =>  P*A*x = P*b  =>  L*U*x = P*b 
+ *   
+ * (where b is a matrix[n][1], and x is a matrix[n][1])
+ * if y = U*x , we solve two systems:
+ *    L * y = P b (forward substition)
+ *    U * x = y (backward substition)
+ *    
+ * We obtain and return x.
+ */
 nml_mat *nml_ls_solve(nml_mat_lup *lu, nml_mat* b) {
   if (lu->U->num_rows != b->num_rows || b->num_cols != 1) {
     NML_FERROR(CANNOT_SOLVE_LIN_SYS_INVALID_B,
@@ -1640,19 +1714,35 @@ nml_mat *nml_ls_solve(nml_mat_lup *lu, nml_mat* b) {
   return x;
 }
 
-// Calculates the inverse of a matrix
+/**
+ * Calculates the inverse of a matrix. To find the inverse B of A,
+ * we solve the linear system AB = I, where I is the identity matrix
+ * (of same size of A). The system is solved by LUP decomposition.
+ *
+ * @param   lup  the LU decomposition of A.
+ * @return       the inverse of A.
+ */
 nml_mat *nml_mat_inv(nml_mat_lup *lup) {
-  unsigned n = lup->L->num_cols;
-  nml_mat *r = nml_mat_sqr(n);
+  const unsigned int num_cols = lup->L->num_cols;
+  nml_mat *r = nml_mat_sqr(num_cols);
   nml_mat *I = nml_mat_eye(lup->U->num_rows);
   nml_mat *invx;
   nml_mat *Ix;
   int i,j;
-  for(j =0; j < n; j++) {
+  for(j = 0; j < num_cols; j++) {
     Ix = nml_mat_col_get(I, j);
     invx = nml_ls_solve(lup, Ix);
+
+    // the j-th column of the A^(-1) is the column vector result
     for(i = 0; i < invx->num_rows; i++) {
+      #if V1    // version 1
       r->data[i][j] = invx->data[i][0];
+      #endif
+
+      #if V2    // version 2
+      __NML_ELEM2(r, i, j) = __NML_ELEM(invx, i, 0, 1);
+      #endif
+
     }
     nml_mat_free(invx);
     nml_mat_free(Ix);
@@ -1683,8 +1773,16 @@ double nml_vect_dot(nml_mat *m1, unsigned int m1col, nml_mat *m2, unsigned m2col
   }
   int i;
   double dot = 0.0;
+  const unsigned num_cols1 = m1->num_cols;
+  const unsigned num_cols2 = m2->num_cols;
   for(i = 0; i < m1->num_rows; i++) {
+    #if V1    // NML version 1
     dot += m1->data[i][m1col] * m2->data[i][m2col];
+    #endif
+
+    #if V2    // NML version 2
+    dot += __NML_ELEM(m1, i, m1col, num_cols1) * __NML_ELEM(m2, i, m2col, num_cols2);
+    #endif
   }
   return dot;
 }
