@@ -1590,7 +1590,7 @@ nml_mat *nml_ls_solvefwd(nml_mat *L, nml_mat *b) {
      * x[i] = ( b[i] -  sum  { L[i][j] * x[j] } ) / L[i][i]
      *                 j < i
      */
-    #if V1    // version 1
+    #if NML_V1    // version 1
     tmp = b->data[i][0];
     for(j = 0; j < i ; j++) {
       tmp -= L->data[i][j] * x->data[j][0];
@@ -1599,7 +1599,7 @@ nml_mat *nml_ls_solvefwd(nml_mat *L, nml_mat *b) {
     #endif
 
     // now, traslating into version 2, with the new form
-    #if V2
+    #if NML_V2
     tmp = __NML_ELEM2(b, i, 0);    // b[i];
     for(j = 0; j < i ; j++) {
       tmp -= __NML_ELEM2(L, i, j) * __NML_ELEM2(x, j, 0);    //  -  sum  { L[i][j] * x[j] }
@@ -1649,7 +1649,7 @@ nml_mat *nml_ls_solvebck(nml_mat *U, nml_mat *b) {
      * x[i] = ( b[i] -  sum  { U[i][j] * x[j] } ) / U[i][i]
      *                 j > i
      */
-    #if V1    // version 1
+    #if NML_V1    // version 1
     tmp = b->data[i][0];
     for(j = i; j < U->num_cols; j++) {
       tmp -= U->data[i][j] * x->data[j][0];
@@ -1658,7 +1658,7 @@ nml_mat *nml_ls_solvebck(nml_mat *U, nml_mat *b) {
     #endif
 
     // now, traslating into version 2, with the new form
-    #if V2
+    #if NML_V2
     tmp = __NML_ELEM2(b, i, 0);    // b[i];
     for(j = 0; j < i ; j++) {
       tmp -= __NML_ELEM2(U, i, j) * __NML_ELEM2(x, j, 0);    //  -  sum  { U[i][j] * x[j] }
@@ -1735,11 +1735,11 @@ nml_mat *nml_mat_inv(nml_mat_lup *lup) {
 
     // the j-th column of the A^(-1) is the column vector result
     for(i = 0; i < invx->num_rows; i++) {
-      #if V1    // version 1
+      #if NML_V1    // version 1
       r->data[i][j] = invx->data[i][0];
       #endif
 
-      #if V2    // version 2
+      #if NML_V2    // version 2
       __NML_ELEM2(r, i, j) = __NML_ELEM(invx, i, 0, 1);
       #endif
 
@@ -1776,46 +1776,104 @@ double nml_vect_dot(nml_mat *m1, unsigned int m1col, nml_mat *m2, unsigned m2col
   const unsigned num_cols1 = m1->num_cols;
   const unsigned num_cols2 = m2->num_cols;
   for(i = 0; i < m1->num_rows; i++) {
-    #if V1    // NML version 1
+    #if NML_V1    // NML version 1
     dot += m1->data[i][m1col] * m2->data[i][m2col];
     #endif
 
-    #if V2    // NML version 2
+    #if NML_V2    // NML version 2
     dot += __NML_ELEM(m1, i, m1col, num_cols1) * __NML_ELEM(m2, i, m2col, num_cols2);
     #endif
   }
   return dot;
 }
 
-// Calculates the l2 norm for a colum in the matrix
+/**
+ * Calculates the l2 norm for a colum in the matrix
+ *
+ * @param   m    the matrix
+ * @param   col  index of column for which to calculate the l2 norm
+ * @return       l2 norm of column `col`
+ */
 double nml_mat_col_l2norm(nml_mat *m, unsigned int col) {
-  if (col >= m->num_cols) {
-    NML_FERROR(CANNOT_COLUMN_L2NORM, col, m->num_cols);
-  }
-  double doublesum = 0.0;
+  const unsigned num_rows = __NML_ROWS(m), 
+    num_cols = __NML_COLS(m);
+  double square_sum = 0.0;
   int i;
-  for(i = 0; i < m->num_rows; i++) {
-    doublesum += (m->data[i][col]*m->data[i][col]);
+
+  if(col >= num_cols) {
+    NML_FERROR(CANNOT_COLUMN_L2NORM, col, num_cols);
   }
-  return sqrt(doublesum);
+  for(i = 0; i < num_rows; i++) {
+    #if NML_V1    // NML version 1
+    square_sum += (m->data[i][col]*m->data[i][col]);
+    #endif
+
+    /**
+     * l2norm(col) = (    sum  { m[i][col] ^ 2 }  ) ^ (1/2)
+     *                1 <= i <= n
+     */
+    #if NML_V2    // NML version 2
+    square_sum += (__NML_ELEM2(m, i, col) * __NML_ELEM2(m, i, col));
+    /*             ~~~~~~~~~~~~~~~~~~~~~~
+     *                                  ^ this definition takes the constant `num_cols`
+     *                                  | as the 2nd dimension of m
+     */
+    #endif
+  }
+  return sqrt(square_sum);
 }
 
-// Calculates the l2norm for each column
-// Keeps results into 1 row matrix
+/**
+ * Calculates the l2norm for each column
+ * Keeps results into 1 row matrix, where the j-th element
+ * corresponds to the l2norm for the j-th column of m
+ *
+ * @param   m  the matrix
+ * @return     row matrix, containing the l2norm at colum-wise.
+ */
 nml_mat *nml_mat_l2norm(nml_mat *m) {
+  const unsigned num_rows = __NML_ROWS(m), 
+    num_cols = __NML_COLS(m);
   int i, j;
-  nml_mat *r = nml_mat_new(1, m->num_cols);
   double square_sum;
-  for(j = 0; j < m->num_cols; j++) {
+  
+  nml_mat *r = nml_mat_new(1, num_cols);
+  for(j = 0; j < num_cols; j++) {
     square_sum = 0.0;
-    for(i = 0; i < m->num_rows; i++) {
-      square_sum+=m->data[i][j]*m->data[i][j];
+    #if NML_V1    // NML version 1
+    for(i = 0; i < num_rows; i++) {
+      square_sum += m->data[i][j] * m->data[i][j];
     }
     r->data[0][j] = sqrt(square_sum);
+    #endif
+
+    /**
+     * l2norm[j] = (    sum  { m[i][j] ^ 2 }  ) ^ (1/2)
+     *              1 <= i <= n
+     */
+    #if NML_V2    // NML version 2
+    for(i = 0; i < num_rows; i++) {
+      square_sum += m->data[i][j] * m->data[i][j];
+      square_sum += (__NML_ELEM2(m, i, j) * __NML_ELEM2(m, i, j));
+      /*             ~~~~~~~~~~~~~~~~~~~~
+       *                                ^ this definition takes the constant `num_cols`
+       *                                | as the 2nd dimension of m
+       */
+    }
+    __NML_ELEM2(r, 0, j) = sqrt(square_sum);
+    #endif
   }
   return r;
 }
 
+/**
+ * Normalizes a matrix, that is, divides each column by its own l2norm.
+ * This way, each column will have an unitary square-norm.
+ *
+ * @param   m  the matrix
+ * @return     the normalized matrix (using the same storage space than 
+ *             its predecesor m)
+ */
 nml_mat *nml_mat_normalize(nml_mat *m) {
   nml_mat *r = nml_mat_cp(m);
   if (!nml_mat_normalize_r(r)) {
@@ -1825,48 +1883,85 @@ nml_mat *nml_mat_normalize(nml_mat *m) {
   return r;
 }
 
+/**
+ * Auxiliary function to normalize matrix m.
+ */
 int nml_mat_normalize_r(nml_mat *m) {
-  nml_mat *l2norms = nml_mat_l2norm(m);
+  const unsigned num_rows = __NML_ROWS(m), 
+    num_cols = __NML_COLS(m);
   int j;
+
+  nml_mat *l2norms = nml_mat_l2norm(m);
   for(j = 0; j < m->num_cols; j++) {
+    #if NML_V1    // NML version 1
     if (l2norms->data[0][j] < NML_MIN_COEF) {
       NML_FERROR(VECTOR_J_DEGENERATE, j);
       nml_mat_free(l2norms);
       return 0;
     }
     nml_mat_col_mult_r(m, j, 1/l2norms->data[0][j]);
+    #endif
+
+    #if NML_V2    // NML version 2
+    if (__NML_ELEM2(l2norms, 0, j) < NML_MIN_COEF) {    // l2norms[0][j]
+      NML_FERROR(VECTOR_J_DEGENERATE, j);
+      nml_mat_free(l2norms);
+      return 0;
+    }
+    nml_mat_col_mult_r(m, j, 1 / __NML_ELEM2(l2norms, 0, j));    // l2norms[0][j]
+    #endif
   }
   nml_mat_free(l2norms);
   return 1;
 }
 
+/**
+ * Allocates a new QR structure.
+ *
+ * @return  new QR structure
+ */
 nml_mat_qr *nml_mat_qr_new() {
   nml_mat_qr *qr = malloc(sizeof(*qr));
   NP_CHECK(qr);
   return qr;
 }
 
+/**
+ * Deallocates a QR structure.
+ *
+ * @param  qr  an existing, previously allocated, QR structure.
+ */
 void nml_mat_qr_free(nml_mat_qr *qr) {
   nml_mat_free(qr->Q);
   nml_mat_free(qr->R);
   free(qr);
 }
 
-// M = QR
+/**
+ * QR factorization. The QR structure will contain both, the ortoghonal matrix Q,
+ * and the upper triangular matrix R, so that M = QR.
+ *
+ * @param   m  the matrix
+ * @return     QR structure containing the matrices Q and R.
+ */
 nml_mat_qr *nml_mat_qr_solve(nml_mat *m) {
-
-  nml_mat_qr *qr = nml_mat_qr_new();
-  nml_mat *Q = nml_mat_cp(m);
-  nml_mat *R = nml_mat_new(m->num_rows, m->num_cols);
-
+  const unsigned num_rows = __NML_ROWS(m), 
+    num_cols = __NML_COLS(m);
   int j, k;
   double l2norm;
   double rkj;
+
+  // creating QR structure
+  nml_mat_qr *qr = nml_mat_qr_new();
+  nml_mat *Q = nml_mat_cp(m);
+  nml_mat *R = nml_mat_new(num_rows, num_cols);
   nml_mat *aj;
   nml_mat *qk;
-  for(j=0; j < m->num_cols; j++) {    
+  // Gram-Schmidt process
+  for(j = 0; j < num_cols; j++) {    
     rkj = 0.0;
     aj = nml_mat_col_get(m, j);
+    #if NML_V1    // NML version 1
     for(k = 0; k < j; k++) {
        rkj = nml_vect_dot(m, j, Q, k);
        R->data[k][j] = rkj;
@@ -1875,12 +1970,38 @@ nml_mat_qr *nml_mat_qr_solve(nml_mat *m) {
        nml_mat_sub_r(aj, qk);
        nml_mat_free(qk);
     }
-    for(k = 0; k < Q->num_rows; k++) {
+    for(k = 0; k < num_rows; k++) {
       Q->data[k][j] = aj->data[k][0];
     }
     l2norm = nml_mat_col_l2norm(Q, j);
     nml_mat_col_mult_r(Q, j, 1/l2norm);
     R->data[j][j] = l2norm;
+    #endif
+
+    #if NML_V2    // NML version 2
+    for(k = 0; k < j; k++) {
+      // dot product of j-th column of m, and k-th column of Q
+      rkj = nml_vect_dot(m, j, Q, k);
+      __NML_ELEM2(R, k, j) = rkj;    // R[k][j] = rkj
+      /* ~~~~~~~~~~~~~~~~~
+       *                 ^ this definition takes constant `num_cols` as the 2nd dimension of R
+       */
+      
+      /* M_j = M_j -  sum { dot(M_j, Q_k) }
+       *             k < j  
+       */
+      qk = nml_mat_col_get(Q, k);
+      nml_mat_col_mult_r(qk, 0, rkj);
+      nml_mat_sub_r(aj, qk);
+      nml_mat_free(qk);
+    }
+    for(k = 0; k < num_rows; k++) {
+      Q->data[k][j] = aj->data[k][0];
+    }
+    l2norm = nml_mat_col_l2norm(Q, j);
+    nml_mat_col_mult_r(Q, j, 1/l2norm);
+    R->data[j][j] = l2norm;
+    #endif    
     nml_mat_free(aj);
   }
   qr->Q = Q;
