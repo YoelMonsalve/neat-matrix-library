@@ -1,0 +1,1200 @@
+\include{preamble}
+
+\usepackage{titling}
+\usepackage{alltt}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage[table]{xcolor}
+
+\def\pt{\textstyle{.}}
+\def\ttindent{\ \ \ \ }
+
+\setlength{\parindent}{0mm}
+
+\title{Writing your own linear algebra matrix library in C}
+\author{Andrei Ciobanu}
+\date{January 20, 2021}
+
+\begin{document}
+
+\maketitle
+
+\thispagestyle{empty} \pagestyle{myheadings}
+\markboth{}{\color[rgb]{.4,.4,.4}\underline{\hspace{\textwidth}}
+\hspace{-\textwidth}\upshape{Writing your own linear algebra matrix library in C.}}
+
+\def\theequation{\arabic{section}.\arabic{equation}}    %custom equation numbering
+
+\section{ The library }
+
+Now, let’s say you are one of the few Engineering/Computer Science students that are passionate about \href{https://en.wikipedia.org/wiki/Linear_algebra}{\it linear algebra}, \href{https://en.wikipedia.org/wiki/Numerical_analysis}{\it numerical analysis} and writing code in a low-level language. Or you are just curious about what’s behind the \href{https://www.mathworks.com/help/matlab/ref/lu.html}{\tt lu(A)} method in Matlab. Or you are passionate about A.I., and you know you cannot learn A.I. algorithms without a good foundation in linear algebra.
+\\
+
+I believe the best exercise you can do is to try to write your (own) Matrix library in a low-level programming language (like C, C++ or even D).
+\\
+
+This tutorial is precisely this, a step-by-step explanation of writing a C Matrix library that implements the “basic” and “not-so-basic” numerical analysis algorithms that will allow us in the end to solve linear systems of equations.
+\\
+
+All code in this tutorial is available on GitHub in the repository called \href{https://github.com/nomemory/neat-matrix-library}{\tt neat-matrix-library}.
+\\
+
+To clone it (using GitHub CLI):
+\begin{verbatim}
+  ~$ gh repo clone nomemory/neat-matrix-library
+\end{verbatim}
+
+The code is not meant to be “efficient”, but relatively easy to follow and understand.
+\\
+
+The tutorial assumes that the reader can write C code, understand pointers and dynamic memory allocation, and is familiar with the C standard library.
+\\
+
+\section{The data: {\tt nml\_matrix}}
+
+The first step is to model the data our library will work with: “matrices”. So we are going to define our first struct, called {\tt nml\_mat} which models a matrix:
+
+\begin{verbatim}
+typedef struct nml_mat_s {
+  unsigned int num_rows;
+  unsigned int num_cols;
+  double **data;
+  int is_square;
+} nml_mat;
+\end{verbatim}
+\hsep
+
+The properties of this {\tt struct} have self-explanatory names:
+\begin{itemize}
+\item {\tt unsigned int num\_rows} -- represents the number of rows of the matrix. 0 is not an acceptable value
+
+\item {\tt unsigned int num\_cols} -- represents the number of columns of the matrix. 0 is not an acceptable value
+
+\item {\tt double **data} -- is “multi-dimensional array” that stores data in rows and columns
+
+\item {\tt int is\_square} -- is a "boolean" value that determines if the matrix is square (has the same number of rows and columns) or not.
+\end{itemize}
+
+From a performance perspective, it’s better to keep the matrix elements in a {\tt double*} using the conversion:
+
+\begin{verbatim}
+    data[i][j] <=> array[i * m + j]
+\end{verbatim}
+
+To better understand how to store multi-dimensional arrays in linear storage please refer to \href{https://stackoverflow.com/questions/14015556/how-to-map-the-indexes-of-a-matrix-to-a-1-dimensional-array-c}{\underline{\it this StackOverflow question}}, or \href{https://en.wikipedia.org/wiki/Row-_and_column-major_order}{\underline{\it read the wikipedia article}} on the topic.
+\\
+
+Even if it might sound like a “controversial” decision, for the sake of simplicity, we will use the double ** multi-dimensional storage.
+
+\section{Allocating/deallocating memory for the {tt nml\_mat} matrix}
+
+Unlike "higher-level" programming languages (Java, Python, etc), that manage memory allocation for you, in C, you need to explicitly ask for memory and explicitly free the memory once you no longer need it.
+\\
+
+In this regard, the next step is to create ``constructor-like'' and “destructor-like” functions for the {\tt nml\_mat struct} defined above. There’s an unwritten rule that says: ``Every {\tt malloc()} has its personal {\tt free()}''.
+
+\begin{verbatim}
+// Constructor-like 
+// Allocates memory for a new matrix
+// All elements in the matrix are 0.0
+nml_mat *nml_mat_new(unsigned int num_rows, unsigned int num_cols);
+
+// Destructor-like
+// De-allocates the memory for the matrix
+void nml_mat_free(nml_mat *matrix);
+\end{verbatim}
+
+Implementing the {\tt nml\_mat\_new()} is quite straightforward:
+
+\begin{verbatim}
+nml_mat *nml_mat_new(unsigned int num_rows, unsigned int num_cols) {
+  if (num_rows == 0) {
+    NML_ERROR(INVALID_ROWS);
+    return NULL;
+  }
+  if (num_cols == 0) {
+    NML_ERROR(INVALID_COLS);
+    return NULL;
+  }
+  nml_mat *m = calloc(1, sizeof(*m));
+  NP_CHECK(m);
+  m->num_rows = num_rows;
+  m->num_cols = num_cols;
+  m->is_square = (num_rows == num_cols) ? 1 : 0;
+  m->data = calloc(m->num_rows, sizeof(*m->data));
+  NP_CHECK(m->data);
+  int i;
+  for(i = 0; i < m->num_rows; ++i) {
+    m->data[i] = calloc(m->num_cols, sizeof(**m->data));
+    NP_CHECK(m->data[i]);
+  }
+  return m;
+}
+\end{verbatim}
+
+Notes:
+
+\begin{itemize}
+\item {\tt NML\_ERROR}, {\tt NP\_CHECK} are macros defined in {\tt nml\_util.h}.
+\item {\tt NML\_ERROR()} or {\tt NML\_FERROR()} are logging utils, that helps us print error message on stderr;
+\item {\tt NP\_CHECK} checks if the newly allocated memory chunk is not {\tt NULL}. In case it’s {\tt NULL} it aborts the program.
+\end{itemize}
+
+Explanation:
+
+\begin{itemize}
+\item[1.] First step is to check if {\tt num\_rows == 0} or {\tt num\_cols == 0}. If they are, we consider the input as invalid, and we print on stderr an error. Afterwards {\tt NULL} is returned;
+
+\item[2.] This line: {\tt nml\_mat *m = calloc(1, sizeof(*m))} allocates memory for 1 (one) {\tt nml\_mat structure};
+\item[3.] For a multi-dimensional array ({\tt double**}), we allocate memory in two steps:
+
+\begin{itemize}
+\item[$\circ$] {\tt m->data = calloc(m->num\_rows, sizeof(*m->data))} - this allocates memory for the column array;
+\item[$\circ$] Then, we allocate memory for each row. By using {\tt calloc()} the data is initialized with 0.0.
+\end{itemize}
+\end{itemize}
+
+Freeing the matrix is even more straightforward. The implementation for {\tt nml\_mat\_free()}:
+
+\begin{verbatim}
+void nml_mat_free(nml_mat *matrix) {
+  int i;
+  for(i = 0; i < matrix->num_rows; ++i) {
+    free(matrix->data[i]);
+  }
+  free(matrix->data);
+  free(matrix);
+}
+\end{verbatim}
+It’s important to note, that given the multidimensional nature of {\tt double**} data, we need to:
+
+\begin{itemize}
+\item[$\bullet$] de-allocate each row individually:\quad {\tt free(matrix->data[i])};
+\item then the column vector:\quad {\tt free(matrix->data)};
+\item and lastly the actual struct:\quad {\tt free(matrix)}.
+\end{itemize}
+
+At this point, it’s a good idea to add more methods to help the potential use of the library to create various {\tt nml\_mat structs}, with various properties.
+\\
+
+\begin{tabular}{l@{\quad}l}
+Method & 	Description 
+\\
+\hline 
+{\tt nml\_mat\_rnd()} & A method to create a random matrix.
+\\
+{\tt nml\_mat\_sqr()} & A method to create a square matrix with elements 0.0.
+\\
+{\tt nml\_mat\_eye()} & A method to create an identity matrix.
+\\
+{\tt nml\_mat\_cp()} & A method to copy the content of a matrix into another matrix.
+\\
+{\tt nml\_mat\_fromfile()} & A method to read the matrix from a FILE.
+\end{tabular}
+
+\section{Creating a random matrix}
+
+Writing a method like {\tt nml\_mat\_rnd()} it’s easy, once we have {\tt nml\_mat\_new()} in place:
+
+\begin{verbatim}
+nml_mat *nml_mat_rnd(
+  unsigned int num_rows, 
+  unsigned int num_cols, 
+  double min, 
+  double max
+  ) 
+{
+  nml_mat *r = nml_mat_new(num_rows, num_cols);
+  int i, j;
+  for(i = 0; i < num_rows; i++) {
+    for(j = 0; j < num_cols; j++) {
+      r->data[i][j] = nml_rand_interval(min, max);
+    }
+  }
+  return r;
+}
+\end{verbatim}
+The input params min and max represent the interval boundaries in which the random numbers are being generated.
+
+The {\tt nml\_rand\_interval(min, max)}, the method responsible for generating random values, looks like this:
+\\
+
+
+\begin{verbatim}
+#define	RAND_MAX	0x7fffffff
+
+double nml_rand_interval(double min, double max) {
+  double d;
+  d = (double) rand() / ((double) RAND_MAX + 1);
+  return (min + d * (max - min));
+}
+\end{verbatim}
+
+\section{Creating a square matrix}
+
+A square matrix has the same number of columns and rows.
+\\
+
+For example, A is square 3x3 matrix:
+
+$$
+A = \left( \begin{array}{rrr}
+1.0 & 2.0 & 3.0 \\
+0.0 & 2.0 & 3.0 \\
+2.0 & 1.0 & 9.0
+\end{array} \right)
+$$
+
+but, B is not a square matrix:
+
+$$
+B
+= \left( \begin{array}{rrr}
+1.0 & 2.0 & 3.0 \\
+0.0 & 2.0 & 3.0
+\end{array} \right)
+$$
+
+Implementing this is as simple as calling the existing {\tt nml\_mat\_new()} function with {\tt rows=cols}:
+
+\begin{verbatim}
+nml_mat *nml_mat_sqr(unsigned int size) {
+  return nml_mat_new(size, size);
+}
+\end{verbatim}
+
+Similarly, you can write a method to produce a random square matrix:
+\begin{verbatim}
+nml_mat *nml_mat_sqr_rnd(unsigned int size, double min, double max) {
+  return nml_mat_rnd(size, size, min, max);
+} 
+\end{verbatim}
+
+\rule{\textwidth}{0.5pt}\\
+\example \textsf{Create a matrix {\tt A} of $3\times 3$, and a random matrix {\tt B} of $4\times 4$}.
+
+\begin{verbatim}
+#include "nml.h"
+
+nml_mat *A = nml_mat_sqr(3);
+nml_mat *B = nml_mat_sqr_rnd(4);
+\end{verbatim}
+\rule{\textwidth}{0.5pt}\\
+
+\section{Creating an identity matrix}
+
+An identity matrix is a square $(N\times N)$ matrix that has 1.0 on the first diagonal, and 0.0 elsewhere:
+
+$$
+\begin{array}{rcl}
+I_n & = &
+\left. \left( \begin{array}{rrrcr}
+1 & 0 & 0 & \ldots & 0 \\
+0 & 1 & 0 & \ldots & 0 \\
+0 & 0 & 1 & \ldots & 0 \\
+\vdots & & & \ddots & \vdots \\
+0 & 0 & 0 & \ldots & 1
+\end{array} \right) \right\} {n \textrm{ rows}}
+\\
+& & \hspace{2mm}\underbrace{\hspace*{34mm}}_{\normalsize n \text{ columns}}
+\end{array}
+$$
+
+A matrix multiplied with its inverse is equal to the identity matrix:\quad  $A^{-1} \times A = A \times A^{-1} = I$.
+\\
+
+From a programming perspective, the first diagonal represents the series of matrix elements for which the indexes {\tt i} and {\tt j} are equal ({\tt i==j}).
+\\
+
+{\tt i} represents the row index, while {\tt j} represents the column index.
+\\
+
+Having said this, our method looks like this:
+
+\begin{verbatim}
+nml_mat *nml_mat_eye(unsigned int size) {
+  nml_mat *r = nml_mat_new(size, size);
+  int i;
+  for(i = 0; i < r->num_rows; i++) {
+    r->data[i][i] = 1.0;
+  }
+  return r;
+}
+\end{verbatim}
+
+To find out the reasons why the identity method is named {\tt eye()} please read \href{https://math.stackexchange.com/questions/3028394/what-is-the-motivation-behind-naming-identity-matrix-as-eye/3028999}{\underline{\itshape this math exchange post}}
+
+\section{Creating a matrix from a FILE}
+
+Instead of having to write something like the code bellow to set the elements of the matrix:
+
+\begin{verbatim}
+nml_mat *m = ...
+m->data[0][0] = 1.0;
+m->data[1][0] = 2.0;
+m->data[2][0] = 4.0;
+// etc. 
+\end{verbatim}
+
+It’s more convenient to allow the user of our library to be able to read the matrix elements from an input text file.
+\\
+The input file should be formatted in a certain way, e.g.:
+
+\begin{verbatim}
+matrix01.data
+----------------
+4 5
+0.0     1.0     2.0     5.0     3.0
+3.0     8.0     9.0     1.0     4.0
+2.0     3.0     7.0     1.0     1.0
+0.0     0.0     4.0     3.0     8.0
+\end{verbatim}
+
+\begin{itemize}
+\item The first row of the file 4 5 represents the numbers of rows (=4) and columns (=5);
+\item The rest of the rows are the elements (20) of the matrix.
+\end{itemize}
+
+The C code that is able to read this file is:
+
+\begin{verbatim}
+nml_mat *nml_mat_fromfilef(FILE *f) {
+  int i, j;
+  unsigned int num_rows = 0, num_cols = 0;
+  fscanf(f, "%d", &num_rows);
+  fscanf(f, "%d", &num_cols);
+  nml_mat *r = nml_mat_new(num_rows, num_cols);
+  for(i = 0; i < r->num_rows; i++) {
+    for(j = 0; j < num_cols; j++) {
+      fscanf(f, "%lf\t", &r->data[i][j]);
+    }
+  }
+  return r;
+} 
+\end{verbatim}
+
+Where:
+
+\begin{itemize}
+\item {\tt fscanf(f, "\%d", \&num\_rows)} 
+and {\tt fscanf(f, "\%d", \&num\_cols)} read the first line;
+\item The {\tt fscanf(f, "\%lf\textbackslash t", \&r->data[i][j])} line inside the for loops read the remaining elements of the matrix.
+\end{itemize}
+
+This method can also be used to read user input from the keyboard, by calling the method like this:
+
+\begin{verbatim}
+nml_mat_fromfilef(stdin);
+\end{verbatim}
+
+\section{Matrix methods}
+
+\subsection{Checking for equality}
+
+It will be nice for the users of our library to be able to compare two matrices and see if they are equal, meaning they have the same number of rows and columns and identical elements.
+
+In practice, it’s good to be able to check if two matrices are ``almost equal'', meaning that their elements are ``almost equal'' within an accpetable tolerance.
+
+Writing a method like this is trivial. We basically have to iterate over all the elements and check for their equality:
+
+\begin{verbatim}
+// Checks if two matrices have the same dimensions
+int nml_mat_eqdim(nml_mat *m1, nml_mat *m2) {
+  return (m1->num_cols == m2->num_cols) &&
+          (m1->num_rows == m2->num_rows);
+}
+
+// Checks if two matrices have the same dimensions, and the elements
+// are all equal to each other with a given tolerance;
+// For exact equality use tolerance = 0.0
+int nml_mat_eq(nml_mat *m1, nml_mat *m2, double tolerance) {
+  if (!nml_mat_eqdim(m1, m2)) {
+    return 0;
+  }
+  int i, j;
+  for(i = 0; i < m1->num_rows; i++) {
+    for(j = 0; j < m1->num_cols; j++) {
+      if (fabs(m1->data[i][j] - m2->data[i][j]) > tolerance) {
+        return 0;
+      }
+    }
+  }
+  return 1;
+}
+\end{verbatim}
+{\tt fabs(x)} returns the absolute value of {\tt x} $\rightarrow$ {\tt |x|}.
+
+\subsection{Printing the matrix}
+
+Printing the matrix is trivial. We just need to iterate through all the elements and use {\tt fprintf()} to show the matrix in {\tt stdout}:
+
+\begin{verbatim}
+void nml_mat_print(nml_mat *matrix) {
+  nml_mat_printf(matrix, "%lf\t\t");
+}
+
+// Prints the matrix on the stdout (with a custom formatting for elements)
+void nml_mat_printf(nml_mat *matrix, const char *d_fmt) {
+  int i, j;
+  fprintf(stdout, "\n");
+  for(i = 0; i < matrix->num_rows; ++i) {
+    for(j = 0; j < matrix->num_cols; ++j) {
+      fprintf(stdout, d_fmt, matrix->data[i][j]);
+    }
+    fprintf(stdout, "\n");
+  }
+  fprintf(stdout, "\n");
+} 
+\end{verbatim}
+
+\subsection{Retrieving / Selecting a column}
+
+Some advanced numerical analysis algorithms (e.g.: QR decomposition) are working extensively on columns, so it’s a good idea to be pro-active about it and create a method that selects/retrieves a column from a given matrix.
+\\
+
+We will define this method as:
+
+\begin{verbatim}
+    nml_mat *nml_mat_col_get(nml_mat *m, unsigned int col)
+\end{verbatim}
+
+From a mathematical perspective calling our method on given matrix retrieves another column matrix:
+
+$$
+\texttt{nml\_mat\_col\_get(}
+\left[ \begin{tabular}{rrr}
+\tt 1.0 & \tt 2.0 & \tt 3.0 \\
+\tt 0.0 & \tt 2.0 & \tt 3.0 \\
+\tt 2.0 & \tt 1.0 & \tt 9.0
+\end{tabular} \right]
+,1) =
+\left[ \begin{array}{rrr}
+\tt 2.0 \\
+\tt 2.0 \\
+\tt 1.0
+\end{array} \right]
+$$
+\\
+The C code for {\tt nml\_mat\_col\_get} looks like this:
+
+\begin{verbatim}
+nml_mat *nml_mat_col_get(nml_mat *m, unsigned int col) {
+  if (col >= m->num_cols) {
+    NML_FERROR(CANNOT_GET_COLUMN, col, m->num_cols);
+    return NULL;
+  }
+  nml_mat *r = nml_mat_new(m->num_rows, 1);
+  int j;
+  for(j = 0; j < r->num_rows; j++) {
+    r->data[j][0] = m->data[j][col];
+  }
+  return r;
+} 
+\end{verbatim}
+
+Observations:
+\\
+
+\begin{itemize}
+\item The resulting matrix has only one column: {\tt nml\_mat *r = nml\_mat\_new(m->num\_rows, 1)};
+\item We copy all elements from column {\tt [col]} to the only column of the resulting matrix {\tt [0]: r->data[j][0] = m->data[j][col]}.
+\end{itemize}
+
+\subsection{Retrieving / Selecting a row}
+
+To keep the API “consistent” we can write a similar method for retrieving a row:
+\\
+
+\texttt{ \ nml\_mat *nml\_mat\_row\_get(nml\_mat *m, unsigned int row)}
+\\
+
+This will work similar to the {\tt nml\_mat\_col\_get(...)}, but instead of retrieving a column we will retrieve a row:
+
+$$
+\texttt{nml\_mat\_row\_get(}
+\left[ \begin{tabular}{rrr}
+\tt 1.0 & \tt 2.0 & \tt 3.0 \\
+\tt 0.0 & \tt 2.0 & \tt 3.0 \\
+\tt 2.0 & \tt 1.0 & \tt 9.0
+\end{tabular} \right]
+\texttt{,1) = }
+\left[ \begin{array}{rrr}
+\tt 0.0 & \tt 2.0 & 3.0
+\end{array} \right]
+$$
+\\
+The C implementation for this method looks like this:
+
+\begin{verbatim}
+nml_mat *nml_mat_row_get(nml_mat *m, unsigned int row) {
+  if (row >= m->num_rows) {
+    NML_FERROR(CANNOT_GET_ROW, row, m->num_rows);
+    return NULL;
+  }
+  nml_mat *r = nml_mat_new(1, m->num_cols);
+  memcpy(r->data[0], m->data[row], m->num_cols * sizeof(*r->data[0]));
+  return r;
+}
+\end{verbatim}
+
+This time we write the code differently. Given the fact the memory per row is contiguous we can make use of {\tt memcpy()}.
+\\
+
+No loops are needed this time. This line of code is enough to achieve what we want:
+\\
+
+\texttt{
+ \ memcpy(r->data[0], m->data[row], m->num\_cols * sizeof(*r->data[0]))
+}
+\\
+
+At this point we’ve created a new row matrix from the initial one {\tt (m)}.
+
+\subsection{Setting values}
+
+To set the element of the matrix to a given value, we can simply access the data field of the {\tt nml\_mat*} struct:
+
+\begin{verbatim}
+nml_mat *m = ...
+m->data[i][j] = 2.0; 
+\end{verbatim}
+
+In addition, we can write helper methods to:
+
+\begin{itemize}
+\item Set all the elements to a given value: {\tt void nml\_mat\_all\_set(nml\_mat *matrix, double value)}
+\item Set all the elements of the first diagonal to a given value: {\tt int nml\_mat\_diag\_set(nml\_mat *m, double value)}
+\end{itemize}
+
+The C code for those two is somewhat trivial:
+
+\begin{verbatim}
+// Sets all elements of a matrix to a given value
+void nml_mat_all_set(nml_mat *matrix, double value) {
+  int i, j;
+  for(i = 0; i < matrix->num_rows; i++) {
+    for(j = 0; j < matrix->num_cols; j++) {
+      matrix->data[i][j] = value;
+    }
+  }
+}
+
+// Sets all elements of the matrix to given value
+int nml_mat_diag_set(nml_mat *m, double value) {
+  if (!m->is_square) {
+    NML_FERROR(CANNOT_SET_DIAG, value);
+    return 0;
+  }
+  int i;
+  for(i = 0; i < m->num_rows; i++) {
+    m->data[i][i] = value;
+  }
+  return 1;
+} 
+\end{verbatim}
+
+\subsection{Multiplying a row with a scalar}
+
+Multiplying a row in the matrix ({\tt nml\_mat}) can be useful when implementing more numerical analysis advanced algorithms.
+\\
+
+The idea is simple, we will define a method with the following signature:
+\\
+
+\texttt{
+ \ int nml\_mat\_row\_mult\_r(nml\_mat *m, unsigned int row, double num);
+ }
+\\
+
+This method will work directly through reference on the matrix m. That’s where the {\_r} stands for.
+\\
+
+From a mathematical perspective this method will do the following:
+
+$$
+\texttt{nml\_mat\_row\_mult\_r(}
+\left[ \begin{tabular}{rrr}
+\tt 1.0 & \tt 2.0 & \tt 3.0 \\
+\tt 0.0 & \tt 2.0 & \tt 3.0 \\
+\tt 2.0 & \tt 1.0 & \tt 9.0
+\end{tabular} \right]
+\texttt{,1, 2.0) = }
+\left[ \begin{tabular}{rrr}
+\tt 1.0 & \tt 2.0 & \tt 3.0 \\
+\tt\bf 0.0 & \tt\bf 4.0 & \tt\bf 6.0 \\
+\tt 2.0 & \tt 1.0 & \tt 9.0
+\end{tabular} \right]
+$$
+\\
+The code implementation looks like this:
+
+\begin{verbatim}
+int nml_mat_row_mult_r(nml_mat *m, unsigned int row, double num) {
+  if (row>= m->num_rows) {
+    NML_FERROR(CANNOT_ROW_MULTIPLY, row, m->num_rows);
+    return 0;
+  }
+  int i;
+  for(i=0; i < m->num_cols; i++) {
+    m->data[row][i] *= num;
+  }
+  return 1;
+}
+\end{verbatim}
+Notice how we select the row: {\tt m->data[row][i] *= num}, where {\tt i = 0 .. m->num\_cols}.
+\\
+
+An alternative method, that instead of referencing m will retrieve a new nml\_mat *r, can be written like this:
+
+\begin{verbatim}
+nml_mat *nml_mat_row_mult(nml_mat *m, unsigned int row, double num) {
+  nml_mat *r = nml_mat_cp(m);
+  if (!nml_mat_row_mult_r(r, row, num)) {
+    nml_mat_free(r);
+    return NULL;
+  }
+  return r;
+} 
+\end{verbatim}
+
+Notice how the {\tt \_r} ending has dropped. This is a common pattern in C.
+
+\subsection{Multiplying a column with a scalar}
+
+Multiplying a column is also quite similar with what we described above.
+
+We are going to end-up with two methods:
+
+\begin{itemize}
+\item {\tt int nml\_mat\_col\_mult\_r(nml\_mat *m, unsigned int col, double num)}
+	\begin{itemize}
+	\item[$\circ$] This will modify the matrix m through reference;
+	\end{itemize}
+\item {\tt nml\_mat *nml\_mat\_col\_mult(nml\_mat *m, unsigned int col, double num)}
+	\begin{itemize}
+	\item[$\circ$] This will return a {\tt new nml\_mat *r matrix}
+	\end{itemize}
+\end{itemize}
+From a math perspective:
+
+$$
+\texttt{nml\_mat\_col\_mult\_r(}
+\left[ \begin{tabular}{rrr}
+\tt 1.0 & \tt 2.0 & \tt 3.0 \\
+\tt 0.0 & \tt 2.0 & \tt 3.0 \\
+\tt 2.0 & \tt 1.0 & \tt 9.0
+\end{tabular} \right]
+\texttt{,0, 2.0) = }
+\left[ \begin{tabular}{rrr}
+\tt\bf 1.0 & \tt 2.0 & \tt 3.0 \\
+\tt\bf 0.0 & \tt 2.0 & \tt 3.0 \\
+\tt\bf 4.0 & \tt 1.0 & \tt 9.0
+\end{tabular} \right]
+$$
+\\
+The C code for both of the methods looks like this:
+
+\begin{verbatim}
+nml_mat *nml_mat_col_mult(nml_mat *m, unsigned int col, double num) {
+  nml_mat *r = nml_mat_cp(m);
+  if (!nml_mat_col_mult_r(r, col, num)) {
+    nml_mat_free(r);
+    return NULL;
+  }
+  return r;
+}
+
+int nml_mat_col_mult_r(nml_mat *m, unsigned int col, double num) {
+  if (col>=m->num_cols) {
+    NML_FERROR(CANNOT_COL_MULTIPLY, col, m->num_cols);
+    return 0;
+  }
+  int i;
+  for(i = 0; i < m->num_rows; i++) {
+    m->data[i][col] *= num;
+  }
+  return 1;
+}
+\end{verbatim}
+
+Notice how we select the column: {\tt m->data[i][col] *= num} , where {\tt i = 0 .. m->num\_rows}.
+
+\subsection{Adding two rows}
+
+The ability to add one row to another, is an important method used later for the implementation of more advanced algorithms: LUP Decomposition, Row Echelon Form, Reduced Row Echelon Form, etc.
+\\
+
+In addition, before adding one row to another we should also offer the possibility to multiply the row with a given scalar.
+\\
+
+We define the following method(s):
+
+\begin{verbatim}
+// We add all elements from row 'row' to row 'where'. 
+// The elements from row 'row' are muliplied using the 'multiplier'
+//
+// This one works through reference, modifying the `m` matrix; 
+int nml_mat_row_addrow_r(nml_mat *m, unsigned int where, 
+unsigned int row, double multiplier);
+
+// We add all elements from row 'row' to row 'where'. 
+// The elements from row 'row' are muliplied using the 'multiplier'
+//
+// This one returns a new matrix, `nml_mat *r`, after the row addition is performed    
+* nml_mat *nml_mat_row_addrow(nml_mat *m, unsigned int where, unsigned int row, 
+double multiplier);
+\end{verbatim}
+
+To better visualise:
+
+$$
+\texttt{nml\_mat\_row\_addrow\_r(}
+\left[ \begin{tabular}{rrr}
+\tt 1.0 & \tt 2.0 & \tt 3.0 \\
+\tt 0.0 & \tt 2.0 & \tt 3.0 \\
+\tt 2.0 & \tt 1.0 & \tt 9.0
+\end{tabular} \right]
+\texttt{,0, 1, 0.5) = }
+$$
+$$
+\left[ \begin{array}{ccc}
+\tt 1.0 + 0 \times \textcolor{blue}{0.5} & 
+\tt 2.0 + 2 \times \textcolor{blue}{0.5} &
+\tt 3.0 + 4.0 \times \textcolor{blue}{0.5}\\
+\tt 0.0 & \tt 2.0 & \tt 3.0 \\
+\tt 4.0 & \tt 1.0 & \tt 9.0
+\end{array} \right] 
+=
+\left[ \begin{tabular}{rrr}
+\tt 1.0 & \tt 2.0 & \tt 5.0 \\
+\tt 0.0 & \tt 2.0 & \tt 3.0 \\
+\tt 2.0 & \tt 1.0 & \tt 9.0
+\end{tabular} \right]
+$$
+\\
+The corresponding C code for the two methods is:
+
+\begin{verbatim}
+nml_mat *nml_mat_row_addrow(nml_mat *m, unsigned int where, 
+unsigned int row, double multiplier) {
+  nml_mat *r = nml_mat_cp(m);
+  if (!nml_mat_row_addrow_r(m, where, row, multiplier)) {
+    nml_mat_free(r);
+    return NULL;
+  }
+  return r;
+}
+\end{verbatim}
+
+\begin{verbatim}
+int nml_mat_row_addrow_r(nml_mat *m, unsigned int where, 
+unsigned int row, double multiplier) {
+
+  if (where >= m->num_rows || row >= m->num_rows) {
+    NML_FERROR(CANNOT_ADD_TO_ROW, multiplier, row, where, m->num_rows);
+    return 0;
+  }
+  int i = 0;
+  for(i = 0; i < m->num_cols; i++) {
+    m->data[where][i] += multiplier * m->data[row][i];
+  }
+  return 1;
+} 
+\end{verbatim}
+
+Notice how we are selecting the rows: {\tt m->data[where][i] += multiplier * m->data[row][i]}, where {\tt i = 0 .. i < m->num\_cols}.
+\\
+
+In case it’s not obvious, if the user simply wants to add two rows, without any multiplication, the multiplier should be kept as 1.0.
+
+\subsection{Multiplying the matrix by a scalar}
+
+The mathematical formula for multiplying the matrix with a scalar is simple:
+
+$$
+s * \left[
+\begin{array}{cccc}
+a_{01} & a_{02} & \ldots & a_{0n} \\
+a_{11} & a_{12} & \ldots & a_{1n} \\
+\vdots & & & \vdots \\
+a_{m1} & a_{m2} & \ldots & a_{mn} 
+\end{array}
+\right]
+=
+\left[
+\begin{array}{cccc}
+s * a_{01} & s * a_{02} & \ldots & s * a_{0n} \\
+s * a_{11} & s * a_{12} & \ldots & s * a_{1n} \\
+\vdots & & & \vdots \\
+s * a_{m1} & s * a_{m2} & \ldots & s * a_{mn} 
+\end{array}
+\right]
+$$
+\\
+So, just like the formula, the code equivalent is simple:
+
+\begin{verbatim}
+nml_mat *nml_mat_smult(nml_mat *m, double num) {
+  nml_mat *r = nml_mat_cp(m);
+  nml_mat_smult_r(r, num);
+  return r;
+}
+
+int nml_mat_smult_r(nml_mat *m, double num) {
+  int i, j;
+  for(i = 0; i < m->num_rows; i++) {
+    for(j = 0; j < m->num_cols; j++) {
+      m->data[i][j] *= num;
+    }
+  }
+  return 1;
+} 
+\end{verbatim}
+
+For each element {\tt m->data[i][j]} we perform the multiplication with the scalar num: {\tt m->data[i][j] *= num} where {\tt i = 0 .. num\_rows} and {\tt j = 0 .. num\_cols}.
+
+\section{Modifying the {\tt nml\_mat} internal structure}
+
+\end{document}
+
+\begin{verbatim}
+
+#include <algorithm>
+...
+
+using namespace TNT;
+...
+
+Array1D<double> v(10);
+
+// 1st way
+for (Array1D<double>::iterator it = x.begin(); it != v.end(); it++) {
+    std::cout << x << "\n";
+}
+// 2nd way
+{auto const &x: v) {
+    std::cout << x << "\n";
+}
+\end{verbatim}
+
+Also, trying to achieve this efficiently, without a significant lack of performance.
+
+\section{ Approach }
+
+The class hierarchy followed to reach a reasonable design of an iterator that meets the requirement demanded by the C++11 standard (\url{http://www.cplusplus.com/reference/iterator/}), was
+
+\begin{verbatim}
+                +----------------------+
+                |    basic_iterator    |
+                +----------------------+
+                            |
+            ----------------+----------------
+           |                                 |
++----------------------+         +----------------------+
+|   input_iterator     |         |    output_iterator   |
++----------------------+         +----------------------+
+           |                                 |
+           |                     +----------------------+
+           |                     |   forward_iterator   |
+           |                     +----------------------+
+           |                                 |
++----------------------+         +------------------------+
+| const_bidirectional_ |         | bidirectional_iterator |
+| iterator             |         +------------------------+
++----------------------+                     |
+           |                                 |
++----------------------+         +--------------------------+
+| const_random_access_ |         | random_access_iterator   |
+| iterator             |         +--------------------------+
++----------------------+
+\end{verbatim}
+
+Some guidance to the build these classes was also taken from \linebreak \url{https://www.internalpointers.com/post/writing-custom-iterators-modern-cpp}. 
+\\
+
+\section{Implementation}
+
+The {\tt basic\_iterator} is the parent class for all iterators, and it defines the minimum methods and properties any iterator has to accomplish. This class encapsulates an internal, protected, member what is  a regular pointer to the target data type.
+\\
+
+The {\tt input\_iterator} is supposed to be only able to read from the array, so it retrieves a constant reference to the pointed element (i.e., by expressions like {\tt *it}). The {output\_iterator} is able to read/write, so it retrieves normal references.
+\\
+
+Also, the {\tt basic\_iterator} have to be \emph{copy-constructible}, \emph{copy-assignable}, \emph{destructible} and \emph{swappable}. Hence, we have to define the copy-constructor, the assignment operator, the default destructor, and the {\tt swap} method:
+\begin{verbatim}
+/** Base class to all the TNT iterators */
+template<class T>
+class basic_iterator
+{
+public:
+  // data types:
+  typedef  T            value_type;
+  typedef  T            element_type;
+  typedef  T &          reference;
+  typedef  T *          pointer;
+  typedef  T const &    const_reference;
+  typedef  T const *    const_pointer;
+
+  // Empty/null constructor
+  basic_iterator() : ptr_(NULL) {}
+  // Cast a C pointer into an iterator (pointer-constructor)
+  basic_iterator(pointer ptr) : ptr_(ptr) {}
+  // Copy constructor
+  basic_iterator(const basic_iterator &it) : ptr_(it.ptr_) {}
+  // Destructor
+  ~basic_iterator() {}
+
+  // cast a regular pointer to iterator
+  void from(pointer ptr);
+
+  // assignment operator: set the left-hand side variable to be equal to the one in the right-hand side.
+  basic_iterator &operator=(const basic_iterator &other);
+  // exchange the content between two iterators (this is used by the assignment operator)
+  void swap(basic_iterator &other);
+  // equality/inequality operator
+  bool operator==(const basic_iterator &other) const;
+  bool operator==(const pointer &ptr) const;
+  bool operator!=(const basic_iterator &other) const;
+  bool operator!=(const pointer &ptr) const;
+  
+protected:
+  pointer ptr_;    // internal pointer
+};// end of basic_iterator interface
+\end{verbatim}
+
+It is also required that the {\tt iterator} class define some public datatypes, like for example, {\tt value\_type}, which is later used by the standard library to read the {\it iterator\_traits}.
+\\
+
+The {\tt forward\_iterator} is a specialization of {\tt output\_iterator} that allows increment operator {\tt (++)}, both in prefix and postfix versions. The {\tt bidirectional\_iterator} extends the  bidirectional one, to incorporate the decrement operator {\tt (--)} in both versions.
+\\
+
+The {\tt random\_access\_iterator} is the most complete kind of iterator, and it also is the default class for {\tt Array1D<T>::iterator}. That is, when we invoke an iterator for an {\tt Array1D<T>}, it will be a {\tt random\_access\_iterator}. This class allows arbitrary increments/decrements by arithmerical operators {\tt (+)}, {\tt (+=)}, {\tt (-)}, {\tt (-=)}.
+\\
+
+Finally, the {\tt const\_forward\_iterator}, {\tt const\_bidirectional\_iterator} and {\tt const\_random\_iterator} are similar to their non-const versions, but descending from {\tt input\_iterator} as this class is limited to read-only accesses. The {\tt const\_random\_access\_iterator} is the default class for the {\tt Array1D<T>::const\_iterator}.
+\\
+
+It is also worth noting that the non-const versions of each iterator has to be cast-able to the respective const version (but not vice versa). 
+\begin{verbatim}
+class forward_iterator {
+  ...
+  // explicit cast to const_forward_iterator
+  explicit operator const_forward_iterator<T> () const;
+  ...
+}
+\end{verbatim}
+
+\section{The copy-constructor and the assignment operator (=)}
+
+In the sentences {\tt it2(it)}, and {\tt it2 = it}, both methods the copy-constructor and the {\tt operator=} are making a copy of the argument object {\tt it}. So, to avoid duplicity of code, we can make a method dependent of the another. In this approach, it was chosen to make the assignment operator dependent of the copy-constructor, that is, the {\tt operator=()} is set to call the copy-contructor.
+\\
+
+\begin{verbatim}
+template<class T>
+basic_iterator<T> &basic_iterator<T>::operator=(const basic_iterator<T> &other) {
+  basic_iterator<T> aux(other);
+  this->swap(aux);
+  return *this;
+}
+\end{verbatim}
+
+Basically, this code creates a new copy of {\tt other} in {\tt aux}, then exchange the content of both, {\tt *this} and {\tt aux}, and return {\tt *this}. The object pointed by {\tt this} will contain a copy of {\tt other} (this is what we was looking for), and the old content of {\tt *this} will be stored in {\tt aux}, which will be consequently destroyed after returning.
+\\
+
+This implementation illustrates the need for including a {\tt swap} method in the definition of iterators.
+
+\section{Examples of use}
+
+\subsection{Raw iterators}
+
+The class iterator was developed with a minimalist philosophy, to solely work over a raw sequence of data of the same type, e.g., a C array. To this purpose, a constructor is available to cast a regular pointer to an iterator (with the {\tt Array1D} class, the {\tt begin()} method would be available).
+
+\rule{\textwidth}{0.5pt}
+\begin{verbatim}
+#include <iostream>
+int v[10];
+
+for (int i = 0; i < 10; i++) {
+    v[i] = i+1;    // v = {1, 2, 3, ..., 10}
+}
+
+// example 1
+TNT::forward_iterator<int> it = &(v[0]);    // or, `v` instead of `&(v[0])`
+std::cout << *it << std::endl;              // 1;
+++it;
+std::cout << *it << std::endl;              // 2;
+++it;
+std::cout << *it << std::endl;              // 3;
+
+// example 2
+TNT::random_access_iterator<int> it2 = v;
+std::cout << *it2 << std::endl;              // 1;
+it2 += 9;
+std::cout << *it2 << std::endl;              // 10;
+it2 = it2 - 5;
+std::cout << *it2 << std::endl;              // 5;
+\end{verbatim}
+\rule{\textwidth}{0.5pt}
+
+\subsection{Iterators with {\tt Array1D}}
+
+The class {\tt TNT::Array1D<T>} was conveniently modified (see file {\tt `tnt\_array1d\_.h'}) to incorporate public data types for iterators:
+
+\begin{verbatim}
+/* iterators */
+	typedef TNT::random_access_iterator<value_type> iterator;
+	typedef TNT::const_random_access_iterator<value_type> const_iterator;
+	//
+	typedef TNT::input_iterator<value_type>         input_iterator;
+	typedef TNT::output_iterator<value_type>        output_iterator;
+	typedef TNT::forward_iterator<value_type>       forward_iterator;
+	typedef TNT::bidirectional_iterator<value_type> bidirectional_iterator;
+	typedef TNT::random_access_iterator<value_type> random_access_iterator;
+	//
+	typedef TNT::const_forward_iterator<value_type>       const_forward_iterator;
+	typedef TNT::const_bidirectional_iterator<value_type> const_bidirectional_iterator;
+	typedef TNT::const_random_access_iterator<value_type> const_random_access_iterator;
+\end{verbatim}
+
+The data type for {\tt Array1D<T>::iterator} is {\tt random\_access\_iterator<T>}, and the one for \linebreak {\tt Array1D<T>::const\_iterator} is {\tt const\_random\_access\_iterator<T>}, to be conformant with the C++ standard.
+\\
+
+The class {\tt Array1D<T>} also now incorporates methods {\tt begin()}, {\tt end()}, {\tt cbegin()} and {\tt cend()} with the same meaning as the standard ones for the {\tt vector} class in STL. The non-const versions retrieve {\tt Array1D<T>::iterator}, and the const versions retrieve {\tt Array1D<T>::const\_iterator}
+\\
+
+Example:
+\\
+\rule{\textwidth}{0.5pt}
+\begin{verbatim}
+#include <iostream>
+using namespace TNT;
+
+Array1D<int> v(10);    // TNT array
+
+for (int i = 0; i < 10; i++) {
+    v[i] = i+1;    // v = {1, 2, 3, ..., 10}
+}
+
+// example 1
+TNT::Array1D<int>::iterator it = v.begin(); // points to v[0]
+std::cout << *it << std::endl;              // 1;
+++it;
+std::cout << *it << std::endl;              // 2;
+++it;
+std::cout << *it << std::endl;              // 3;
+
+// example 2
+TNT::Array1D<int>::iterator it2 = v.end() - 1; // points to v[9]
+std::cout << *it2 << std::endl;              // 10;
+it2 -= 2;
+std::cout << *it2 << std::endl;              // 8;
+it2 -= 3;
+std::cout << *it2 << std::endl;              // 5;
+
+// example 3: C++ iterators style
+for (auto it = v.begin(); it != v.end(); ++it) {
+    std::cout << *it << std::endl;           // will print 1 to 10
+}
+for (auto it = v.end() - 1; it != v.begin() - 1; --it) {
+    std::cout << *it << std::endl;           // will print 10 to 1
+}
+\end{verbatim}
+
+\subsection{{\tt TNT} arrays, plus iterators, plus STL}
+
+Having created an {\tt iterator} class, accomplishing the requirements of C++11 standard, this should be enough to work along with any of the algorithmic procedures in the STL.
+\\
+Allowing, for example, to further develop template algorithms for handling Data Structures, etc., and this way extending the {\tt TNT} library.
+\\
+
+Example:
+\\
+\rule{\textwidth}{0.5pt}
+\begin{verbatim}
+#include <iostream>
+#include <algorithm>
+using namespace TNT;
+
+Array1D<int> v(10);    // TNT array
+
+// example 1: looping over array
+for (auto &x : v) {
+    std::cout << x << std::endl;           // will print 1 to 10
+}
+for (auto &x : v) {
+    x * = 2;                               // doubling elements in v
+}
+
+// example 2: looping array, using std::for_each
+std::for_each(v.begin(), v.end(), [](int x) {std::cout << x << std::endl;} );
+
+// example 3: populating array, using std::fill
+std::fill(v.begin(), v.end(), 3);
+
+// example 4: doubling values, using std::transform
+std::for_each(v.begin(), v.end(), v.begin(), [](int x) {return 2*x;} );
+
+// example 5: sorting array, using std::sort
+std::sort(v.begin(), v.end());
+\end{verbatim}
+
+\section{Testing}
+
+Test programs were designed to check a variety of features about the defined classes. All the content is into the folder {\tt `testing'}. The file {\tt `iterator.cpp'} is to test the class {\tt iterator} merely, that is, over regular C arrays. The file {\tt `Array1D.cpp'} is to test the iterators applied to the {\tt TNT} arrays. Here, we can comprobate several types of constructors, assignment operator, increments and decrements, as well as the behavior of the {\tt TNT::Array1D::iterator} working together with the STL algorithms.
+\\
+
+A {\tt makefile} was built to automate the process of compilation. So, first move to the testing directory
+\begin{verbatim}
+    ~$ cd testing
+\end{verbatim}
+
+and then
+
+\begin{verbatim}
+    ~$ make
+\end{verbatim}
+
+or (if you have garbage files from an old compilation)
+
+\begin{verbatim}
+    ~$ make clean; make
+\end{verbatim}
+
+will produce two executables: `{\tt iterator}' and `{\tt Array1D}'. Once done this, the commands
+
+\begin{verbatim}
+    ~$ ./iterator
+    ~$ ./Array1D
+\end{verbatim}
+
+are to run each of these tests. Note that you can define two constants, {\tt N\_ELEM} and {\tt MAX\_NUMBER} to control the number of (random) elements in the datasets, and the range of those.
+\\
+These constants are default to {\tt N\_ELEM=10}, and {\tt MAX\_NUMBER=20}, but you can change them by editing the makefile, or directly as for example
+
+\begin{verbatim}
+    ~$ g++ -o iterator iterator.cpp -DN_ELEM=100
+\end{verbatim}
+
+% References
+\begin{thebibliography}{9}
+\bibitem{tnt}
+The {\tt TNT} home page.
+\\ \url{https://math.nist.gov/tnt/index.html}.
+
+\bibitem{Array1D-doc}
+Documentation for {\tt TNT::Array1D} 
+\\ \url{https://math.nist.gov/tnt/tnt_doxygen/class_TNT__Array1D.html}
+
+\bibitem{writing-custom-iterators}
+An article describing how to write your own {\tt iterator} class.
+\\ \url{https://www.internalpointers.com/post/writing-custom-iterators-modern-cpp}
+
+\bibitem{iterators-overview}
+A post with an overview of C++ iterators.
+\\ \url{https://www.learncpp.com/cpp-tutorial/stl-iterators-overview/}
+
+\bibitem{C++-iterator}
+The standard reference for C++ iterators.
+\\ \url{http://www.cplusplus.com/reference/iterator/}
+\end{thebibliography}
+\end{document}n
