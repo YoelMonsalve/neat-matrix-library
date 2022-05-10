@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.14159265-2.6-1.40.19 (TeX Live 2019/dev/Debian) (preloaded format=latex 2021.1.13)  9 MAY 2022 12:24
+This is pdfTeX, Version 3.14159265-2.6-1.40.19 (TeX Live 2019/dev/Debian) (preloaded format=latex 2021.1.13)  10 MAY 2022 08:30
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -698,12 +698,114 @@ cmr/m/n/10.95 we per-form the mul-ti-pli-ca-tion with the scalar num: \OT1/cmtt
 /m/n/10.95 m->data[i][j]
  []
 
-Package atveryend Info: Empty hook `BeforeClearDocument' on input line 858.
 [15]
-Package atveryend Info: Empty hook `AfterLastShipout' on input line 858.
+Underfull \hbox (badness 10000) in paragraph at lines 869--871
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 872--874
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 877--879
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 880--882
+
+ []
+
+[16]
+Underfull \hbox (badness 10000) in paragraph at lines 935--937
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 938--940
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 943--945
+
+ []
+
+[17]
+Underfull \hbox (badness 10000) in paragraph at lines 995--997
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1055--1057
+
+ []
+
+[18]
+Underfull \hbox (badness 10000) in paragraph at lines 1058--1060
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1117--1119
+
+ []
+
+[19]
+Underfull \hbox (badness 10000) in paragraph at lines 1120--1122
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1123--1125
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1126--1128
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1130--1132
+
+ []
+
+[20] [21]
+Underfull \hbox (badness 10000) in paragraph at lines 1244--1246
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1247--1249
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1250--1252
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1253--1255
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1257--1259
+
+ []
+
+[22] [23]
+Package atveryend Info: Empty hook `BeforeClearDocument' on input line 1362.
+ [24]
+Package atveryend Info: Empty hook `AfterLastShipout' on input line 1362.
  (./nml.aux)
-Package atveryend Info: Empty hook `AtVeryEndDocument' on input line 858.
-Package atveryend Info: Executing hook `AtEndAfterFileList' on input line 858.
+Package atveryend Info: Empty hook `AtVeryEndDocument' on input line 1362.
+Package atveryend Info: Executing hook `AtEndAfterFileList' on input line 1362.
+
 
 
 Package rerunfilecheck Warning: File `nml.out' has changed.
@@ -711,20 +813,20 @@ Package rerunfilecheck Warning: File `nml.out' has changed.
 (rerunfilecheck)                or use package `bookmark'.
 
 Package rerunfilecheck Info: Checksums for `nml.out':
-(rerunfilecheck)             Before: E54DB8A1DA685666A56BBCE80A58CFF5;1169
-(rerunfilecheck)             After:  FCA8D97BFC4FABEC54852874AA8C1AF1;1248.
+(rerunfilecheck)             Before: E874EDE56A590C46DA9147F3128E3F7D;1670
+(rerunfilecheck)             After:  8B31AA6D7030FFC9157403C25FE14B04;1798.
 
 LaTeX Font Warning: Some font shapes were not available, defaults substituted.
 
-Package atveryend Info: Empty hook `AtVeryVeryEnd' on input line 858.
+Package atveryend Info: Empty hook `AtVeryVeryEnd' on input line 1362.
  ) 
 Here is how much of TeX's memory you used:
- 9127 strings out of 494459
- 123574 string characters out of 6174527
- 268205 words of memory out of 5000000
- 12642 multiletter control sequences out of 15000+600000
+ 9138 strings out of 494459
+ 123727 string characters out of 6174527
+ 268914 words of memory out of 5000000
+ 12653 multiletter control sequences out of 15000+600000
  15203 words of font info for 64 fonts, out of 8000000 for 9000
  62 hyphenation exceptions out of 8191
  33i,17n,35p,590b,455s stack positions out of 5000i,500n,10000p,200000b,80000s
 
-Output written on nml.dvi (15 pages, 51796 bytes).
+Output written on nml.dvi (24 pages, 78396 bytes).
