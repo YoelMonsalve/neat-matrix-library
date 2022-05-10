@@ -1,6 +1,6 @@
 \BOOKMARK [1][-]{section.1}{ The library }{}% 1
 \BOOKMARK [1][-]{section.2}{The data: nml\137matrix}{}% 2
-\BOOKMARK [1][-]{section.3}{Allocating/deallocating memory for the tt nml\137mat matrix}{}% 3
+\BOOKMARK [1][-]{section.3}{Allocating/deallocating memory for the nml\137mat matrix}{}% 3
 \BOOKMARK [1][-]{section.4}{Creating a random matrix}{}% 4
 \BOOKMARK [1][-]{section.5}{Creating a square matrix}{}% 5
 \BOOKMARK [1][-]{section.6}{Creating an identity matrix}{}% 6
@@ -24,3 +24,15 @@
 \BOOKMARK [2][-]{subsection.9.6}{Vertical concatenation}{section.9}% 24
 \BOOKMARK [1][-]{section.10}{Basic Matrix Operations}{}% 25
 \BOOKMARK [2][-]{subsection.10.1}{Add two matrices}{section.10}% 26
+\BOOKMARK [2][-]{subsection.10.2}{Substracting two matrices}{section.10}% 27
+\BOOKMARK [2][-]{subsection.10.3}{Multiplying two matrices}{section.10}% 28
+\BOOKMARK [1][-]{section.11}{Row Echelon Form}{}% 29
+\BOOKMARK [2][-]{subsection.11.1}{Example}{section.11}% 30
+\BOOKMARK [2][-]{subsection.11.2}{Code implementation}{section.11}% 31
+\BOOKMARK [1][-]{section.12}{Reduces Row Echelon Form}{}% 32
+\BOOKMARK [2][-]{subsection.12.1}{Code Implementation}{section.12}% 33
+\BOOKMARK [1][-]{section.13}{LU\(P\) Decomposition}{}% 34
+\BOOKMARK [2][-]{subsection.13.1}{The LU\(P\) algorithm as an example}{section.13}% 35
+\BOOKMARK [2][-]{subsection.13.2}{Code implementation}{section.13}% 36
+\BOOKMARK [1][-]{section.14}{Solving linear systems of equations}{}% 37
+\BOOKMARK [2][-]{subsection.14.1}{Forward substitution}{section.14}% 38
