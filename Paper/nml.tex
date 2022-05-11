@@ -866,7 +866,7 @@ The next set of functionalities we can write to help our potential library users
 
 \subsection{Removing a column}
 
-Removing a column from aM[n x m] matrix, involves the creation of a new {\tt [n x (m-1)]} matrix.
+Removing a column from a $M[n\times m]$ matrix, involves the creation of a new {\tt [n x (m-1)]} matrix.
 \\
 
 The method signature looks like this:
@@ -2264,350 +2264,629 @@ nml_mat_lup *nml_mat_lup_solve(nml_mat *m) {
 
 \subsection{Forward substitution}
 
+Forward substitution is the process of solving linear systems of equations $Lx=B$, if $L$ is a lower diagonal coefficient matrix.
 
+$$
+\begin{bmatrix}
+l_{11} & 0 & \ldots && 0\\
+l_{21} & l_{22} & \ldots && 0\\
+\vdots & & & & \vdots \\
+l_{m1} & l_{m2} & \ldots && l_{mm}\\
+\end{bmatrix}
+\begin{bmatrix}
+x_{1} \\
+x_{2} \\
+\vdots   \\
+x_{m}
+\end{bmatrix}
+=
+\begin{bmatrix}
+b_{1} \\
+b_{2} \\
+\vdots \\
+b_{m}
+\end{bmatrix}
+$$
 
-\end{document}
+In this case, the resulting formulas for $x_1, x_2, x_m$ are:
+$$
+\begin{array}{rcl}
+x_{1} & = & \displaystyle \frac{b_{1}}{l_{11}} \\[4mm]
+x_{2} & = & \displaystyle \frac{b_{2}-l_{21}\,x_{1}}{l_{22}} \\[2mm]
+& ...&  \\
+x_{m} & = & \displaystyle \frac{\displaystyle b_{m} - \sum_{i=1}^{m-1} l_{mi}\,x_{i}}{l_{mm}}
+\end{array}
+$$
 
+in general,
 
+$$
+x_i = \left( b_i - \sum_{j<i} l_{ij}x_j \right) / l_{ii}
+$$
+
+which allows us to easily write a computational C code
 
 \begin{verbatim}
-
-#include <algorithm>
-...
-
-using namespace TNT;
-...
-
-Array1D<double> v(10);
-
-// 1st way
-for (Array1D<double>::iterator it = x.begin(); it != v.end(); it++) {
-    std::cout << x << "\n";
-}
-// 2nd way
-{auto const &x: v) {
-    std::cout << x << "\n";
-}
-\end{verbatim}
-
-Also, trying to achieve this efficiently, without a significant lack of performance.
-
-\section{ Approach }
-
-The class hierarchy followed to reach a reasonable design of an iterator that meets the requirement demanded by the C++11 standard (\url{http://www.cplusplus.com/reference/iterator/}), was
-
-\begin{verbatim}
-                +----------------------+
-                |    basic_iterator    |
-                +----------------------+
-                            |
-            ----------------+----------------
-           |                                 |
-+----------------------+         +----------------------+
-|   input_iterator     |         |    output_iterator   |
-+----------------------+         +----------------------+
-           |                                 |
-           |                     +----------------------+
-           |                     |   forward_iterator   |
-           |                     +----------------------+
-           |                                 |
-+----------------------+         +------------------------+
-| const_bidirectional_ |         | bidirectional_iterator |
-| iterator             |         +------------------------+
-+----------------------+                     |
-           |                                 |
-+----------------------+         +--------------------------+
-| const_random_access_ |         | random_access_iterator   |
-| iterator             |         +--------------------------+
-+----------------------+
-\end{verbatim}
-
-Some guidance to the build these classes was also taken from \linebreak \url{https://www.internalpointers.com/post/writing-custom-iterators-modern-cpp}. 
-\\
-
-\section{Implementation}
-
-The {\tt basic\_iterator} is the parent class for all iterators, and it defines the minimum methods and properties any iterator has to accomplish. This class encapsulates an internal, protected, member what is  a regular pointer to the target data type.
-\\
-
-The {\tt input\_iterator} is supposed to be only able to read from the array, so it retrieves a constant reference to the pointed element (i.e., by expressions like {\tt *it}). The {output\_iterator} is able to read/write, so it retrieves normal references.
-\\
-
-Also, the {\tt basic\_iterator} have to be \emph{copy-constructible}, \emph{copy-assignable}, \emph{destructible} and \emph{swappable}. Hence, we have to define the copy-constructor, the assignment operator, the default destructor, and the {\tt swap} method:
-\begin{verbatim}
-/** Base class to all the TNT iterators */
-template<class T>
-class basic_iterator
-{
-public:
-  // data types:
-  typedef  T            value_type;
-  typedef  T            element_type;
-  typedef  T &          reference;
-  typedef  T *          pointer;
-  typedef  T const &    const_reference;
-  typedef  T const *    const_pointer;
-
-  // Empty/null constructor
-  basic_iterator() : ptr_(NULL) {}
-  // Cast a C pointer into an iterator (pointer-constructor)
-  basic_iterator(pointer ptr) : ptr_(ptr) {}
-  // Copy constructor
-  basic_iterator(const basic_iterator &it) : ptr_(it.ptr_) {}
-  // Destructor
-  ~basic_iterator() {}
-
-  // cast a regular pointer to iterator
-  void from(pointer ptr);
-
-  // assignment operator: set the left-hand side variable to be equal to the one in the right-hand side.
-  basic_iterator &operator=(const basic_iterator &other);
-  // exchange the content between two iterators (this is used by the assignment operator)
-  void swap(basic_iterator &other);
-  // equality/inequality operator
-  bool operator==(const basic_iterator &other) const;
-  bool operator==(const pointer &ptr) const;
-  bool operator!=(const basic_iterator &other) const;
-  bool operator!=(const pointer &ptr) const;
+// Forward substitution algorithm
+// Solves the linear system L * x = b
+//
+// L is lower triangular matrix of size NxN
+// B is column matrix of size Nx1
+// x is the solution column matrix of size Nx1
+//
+// Note: In case L is not a lower triangular matrix, the algorithm will try to
+// select only the lower triangular part of the matrix L and solve the system
+// with it.
+//
+// Note: In case any of the diagonal elements (L[i][i]) are 0 the system cannot
+// be solved
+//
+// Note: This function is usually used with an L matrix from a LU decomposition
+nml_mat *nml_ls_solvefwd(nml_mat *L, nml_mat *b) {
+  nml_mat* x = nml_mat_new(L->num_cols, 1);
+  int i,j;
+  double tmp;
+  for(i = 0; i < L->num_cols; i++) {
   
-protected:
-  pointer ptr_;    // internal pointer
-};// end of basic_iterator interface
-\end{verbatim}
-
-It is also required that the {\tt iterator} class define some public datatypes, like for example, {\tt value\_type}, which is later used by the standard library to read the {\it iterator\_traits}.
-\\
-
-The {\tt forward\_iterator} is a specialization of {\tt output\_iterator} that allows increment operator {\tt (++)}, both in prefix and postfix versions. The {\tt bidirectional\_iterator} extends the  bidirectional one, to incorporate the decrement operator {\tt (--)} in both versions.
-\\
-
-The {\tt random\_access\_iterator} is the most complete kind of iterator, and it also is the default class for {\tt Array1D<T>::iterator}. That is, when we invoke an iterator for an {\tt Array1D<T>}, it will be a {\tt random\_access\_iterator}. This class allows arbitrary increments/decrements by arithmerical operators {\tt (+)}, {\tt (+=)}, {\tt (-)}, {\tt (-=)}.
-\\
-
-Finally, the {\tt const\_forward\_iterator}, {\tt const\_bidirectional\_iterator} and {\tt const\_random\_iterator} are similar to their non-const versions, but descending from {\tt input\_iterator} as this class is limited to read-only accesses. The {\tt const\_random\_access\_iterator} is the default class for the {\tt Array1D<T>::const\_iterator}.
-\\
-
-It is also worth noting that the non-const versions of each iterator has to be cast-able to the respective const version (but not vice versa). 
-\begin{verbatim}
-class forward_iterator {
-  ...
-  // explicit cast to const_forward_iterator
-  explicit operator const_forward_iterator<T> () const;
-  ...
+    /**
+     * x[i][0] = ( b[i][0] -  sum { L[i][j] * x[j][0] } ) / L[i][i]
+     *                      (j < i)
+     */
+    tmp = b->data[i][0];
+    for(j = 0; j < i ; j++) {
+      tmp -= L->data[i][j] * x->data[j][0];
+    }
+    x->data[i][0] = tmp / L->data[i][i];
+  }
+  return x;
 }
 \end{verbatim}
 
-\section{The copy-constructor and the assignment operator (=)}
+\subsection{Backward substitution}
 
-In the sentences {\tt it2(it)}, and {\tt it2 = it}, both methods the copy-constructor and the {\tt operator=} are making a copy of the argument object {\tt it}. So, to avoid duplicity of code, we can make a method dependent of the another. In this approach, it was chosen to make the assignment operator dependent of the copy-constructor, that is, the {\tt operator=()} is set to call the copy-contructor.
-\\
+Backward substitution is the process of solving a linear system of equations $Ux = b$, is $U$ is an upper diagonal coefficient matrix
+
+$$
+\begin{bmatrix}
+u_{11} & u_{12} & \ldots && u_{1m} \\
+0 & u_{22} & \ldots && u_{2m} \\
+\vdots & & & & \vdots \\
+0 & 0 & \ldots && u_{mm} \\
+\end{bmatrix}
+\begin{bmatrix}
+x_{1} \\
+x_{2} \\
+\vdots   \\
+x_{m}
+\end{bmatrix}
+=
+\begin{bmatrix}
+b_{1} \\
+b_{2} \\
+\vdots \\
+b_{m}
+\end{bmatrix}
+$$
+
+Similar to the example above, the code implementation is straightforward, from the mathematical formula
+
+$$
+x_i = \left( b_i - \sum_{j>i} u_{ij}x_j \right) / u_{ii}
+$$
 
 \begin{verbatim}
-template<class T>
-basic_iterator<T> &basic_iterator<T>::operator=(const basic_iterator<T> &other) {
-  basic_iterator<T> aux(other);
-  this->swap(aux);
-  return *this;
+// Back substition algorithm
+// Solves the linear system U * x = b
+//
+// U is an upper triangular matrix of size NxN
+// b is a column matrix of size Nx1
+// x is the solution column matrix of size Nx1
+//
+// Note in case U is not an upper triangular matrix, the algorithm will try to
+// select only the upper triangular part of the matrix U and solve the system
+// with it
+//
+// Note: In case any of the diagonal elements (U[i][i]) are 0 the system cannot
+// be solved
+nml_mat *nml_ls_solvebck(nml_mat *U, nml_mat *b) {
+  nml_mat *x = nml_mat_new(U->num_cols, 1);
+  int i = U->num_cols, j;
+  double tmp;
+  while(i-->0) {
+    /**
+     * x[i][0] = ( b[i][0] -  sum { u[i][j] * x[j][0] } ) / u[i][i]
+     *                      (j > i)
+     */
+    tmp = b->data[i][0];
+    for(j = i; j < U->num_cols; j++) {
+      tmp -= U->data[i][j] * x->data[j][0];
+    }
+    x->data[i][0] = tmp / U->data[i][i];
+  }
+  return x;
 }
 \end{verbatim}
 
-Basically, this code creates a new copy of {\tt other} in {\tt aux}, then exchange the content of both, {\tt *this} and {\tt aux}, and return {\tt *this}. The object pointed by {\tt this} will contain a copy of {\tt other} (this is what we was looking for), and the old content of {\tt *this} will be stored in {\tt aux}, which will be consequently destroyed after returning.
+\subsection{Solving linear systems using LU(P) decomposition}
+
+Knowing the $PA=LU$ factorisation of a matrix allows us to solve a linear system of equations in the form $Ax=b$, by using a combination of backward and forward substitution
+
+\begin{eqnarray}
+\nonumber Ax & = & b \\
+\nonumber PAx & = & Pb \\
+\nonumber L(Ux) & = & Pb
+\end{eqnarray}
+
+To make use of the previous two algorithms ({\tt nml\_ls\_solvebck(...)}, {\tt nml\_ls\_solvefwd(...)}) we can introduce an auxiliary system of equations $y=Ux$. This is, we can solve the system $Ax=b$ by solving the pair of systems
+
+$$
+Ly = Pb, \qquad Ux = y
+$$
+
+\begin{itemize}
+\item to solve $Ly = Pb$, we use forward-substitution, as $L$ is lower triangular.
+\item to solve $Ux = y$, we use backward-substitution, as $U$ is upper triangular.
+\end{itemize}
+
+Translating this into code is simple
+
+\begin{verbatim}
+nml_mat *nml_ls_solve(nml_mat_lup *lu, nml_mat* b) {
+  if (lu->U->num_rows != b->num_rows || b->num_cols != 1) {
+    NML_FERROR(CANNOT_SOLVE_LIN_SYS_INVALID_B,
+      b->num_rows,
+      b->num_cols,
+      lu->U->num_rows,
+      1);
+      return NULL;
+  }
+  nml_mat *Pb = nml_mat_dot(lu->P, b);
+
+  // We solve L*y = P*b using forward substition
+  nml_mat *y = nml_ls_solvefwd(lu->L, Pb);
+
+  // We solve U*x=y
+  nml_mat *x = nml_ls_solvebck(lu->U, y);
+
+  nml_mat_free(y);
+  nml_mat_free(Pb);
+  return x;
+} 
+\end{verbatim}
+
+\subsection{Calculating the inverse of the matrix using LU(P) decomposition}
+
+A square matrix $A$ is called invertible if there exists a matrix $A^{-1}$, so that $A\, A^{-1}=A^{-1}\, A = I$, being the identity matrix of the same size of $A$.
 \\
 
-This implementation illustrates the need for including a {\tt swap} method in the definition of iterators.
+We call $A^{-1}$ the inverse of the matrix $A$. The equality $A\, A^{-1} = I$, in matrix form, looks like:
 
-\section{Examples of use}
+$$
+\begin{bmatrix}
+A_{11} & A_{12} & A_{13} \\
+A_{21} & A_{22} & A_{23} \\
+A_{31} & A_{32} & A_{33}
+\end{bmatrix}
+*
+\begin{bmatrix}
+A_{11}^{-1} & A_{12}^{-1} & A_{13}^{-1} \\
+A_{21}^{-1} & A_{22}^{-1} & A_{23}^{-1} \\
+A_{31}^{-1} & A_{32}^{-1} & A_{33}^{-1}
+\end{bmatrix}
+=
+\begin{bmatrix}
+1 & 0 & 0 \\
+0 & 1 & 0 \\
+0 & 0 & 1
+\end{bmatrix}
+$$
 
-\subsection{Raw iterators}
+To find $A_{ij}^{-1}$, we solve 3 sysyems of linear equations in the form
 
-The class iterator was developed with a minimalist philosophy, to solely work over a raw sequence of data of the same type, e.g., a C array. To this purpose, a constructor is available to cast a regular pointer to an iterator (with the {\tt Array1D} class, the {\tt begin()} method would be available).
+$$
+\begin{bmatrix}
+A_{11} & A_{12} & A_{13} \\
+A_{21} & A_{22} & A_{23} \\
+A_{31} & A_{32} & A_{33}
+\end{bmatrix}
+*
+\begin{bmatrix}
+A_{11}^{-1}  \\
+A_{21}^{-1}  \\
+A_{31}^{-1}
+\end{bmatrix}
+=
+\begin{bmatrix}
+1 \\
+0 \\
+0 
+\end{bmatrix}
+$$
+
+$$
+\begin{bmatrix}
+A_{11} & A_{12} & A_{13} \\
+A_{21} & A_{22} & A_{23} \\
+A_{31} & A_{32} & A_{33}
+\end{bmatrix}
+*
+\begin{bmatrix}
+A_{12}^{-1}  \\
+A_{22}^{-1}  \\
+A_{32}^{-1}
+\end{bmatrix}
+=
+\begin{bmatrix}
+0 \\
+1 \\
+0
+\end{bmatrix}
+$$
+
+$$
+\begin{bmatrix}
+A_{11} & A_{12} & A_{13} \\
+A_{21} & A_{22} & A_{23} \\
+A_{31} & A_{32} & A_{33}
+\end{bmatrix}
+*
+\begin{bmatrix}
+A_{13}^{-1}  \\
+A_{23}^{-1}  \\
+A_{33}^{-1}
+\end{bmatrix}
+=
+\begin{bmatrix}
+0 \\
+0 \\
+1
+\end{bmatrix}
+$$
+
+in other words, we solve
+
+$$
+\begin{cases}
+A * A_{col1}^{-1} = I_{col1} \\
+A * A_{col2}^{-1} = I_{col2} \\
+A * A_{col3}^{-1} = I_{col3} \\
+\end{cases}
+$$
+
+This means that we actually need to solve three systems of type $A x_i = B_i$, where $x_i$ will be the $i$-th column of $A^{-1}$, and $B_i$ is the $i$-th column of $I$.
+\\
+
+Having said this, the C code implementing the algorithm is as follows:
+
+\begin{verbatim}
+// Calculates the inverse of a matrix
+nml_mat *nml_mat_inv(nml_mat_lup *lup) {
+  unsigned n = lup->L->num_cols;
+  nml_mat *r = nml_mat_sqr(n);
+  nml_mat *I = nml_mat_eye(lup->U->num_rows);
+  nml_mat *invx;
+  nml_mat *Ix;
+  int i,j;
+  for(j =0; j < n; j++) {
+    Ix = nml_mat_col_get(I, j);
+    invx = nml_ls_solve(lup, Ix);
+    for(i = 0; i < invx->num_rows; i++) {
+      r->data[i][j] = invx->data[i][0];
+    }
+    nml_mat_free(invx);
+    nml_mat_free(Ix);
+  }
+  nml_mat_free(I);
+  return r;
+} 
+\end{verbatim}
+
+\subsection{Calculating the determinant of the matrix using LU(P) decomposition}
+
+The determinant of the product of two matrices is the product of their determinants. After $LU(P)$ decomposition, we have $PA = LU \Rightarrow \det(P) \cdot \det(A) = \det(L) \cdot \det(U)$.
+\\
+
+Because $P$ is a permutation of $I$:
+
+$$
+\det(P) = (-1)^{n} = f(n) = 
+\left\{ \begin{array}{r@{\quad}l}
+1, & n \text{ is even} \\
+-1, & n \text{ is odd}
+\end{array} \right.
+$$
+
+$n$ represents the total number of permutations of $I$. This value has already been computed and stored in {\tt nml\_mat\_lup->num\_permutations}.
+\\
+
+$L$ is a lower triangular matrix. The determinant of a lower triangular matrix is the product of its diagonal elements $\Rightarrow \det(L) = 1$.
+\\
+
+$U$ is an upper trangular matrix. The determinant of an upper triangular matrix is the product of its diagonal elements $\Rightarrow \det(U) = \prod_{i=1}^{N} U_{ii}$.
+\\
+
+Using all this, we have
+
+$$
+\det(P) \cdot \det(A) = \det(L) \cdot \det(P) \quad \therefore \quad \det(A) = \frac{\prod_{i=1}^{N} U_{ii}}{\text{f(num\_permutations)}}
+$$
+
+This means that the determinant of matrix $A$ is actually the product of the diagonal elements of matrix $U$ multiplied by $\pm 1$, depending on whether the number of row permutations is even/odd respectively.
+\\
+
+Putting this into code is as simple as:
+
+\begin{verbatim}
+// After the LU(P) factorisation the determinant can be easily calculated
+// by multiplying the main diagonal of matrix U with the sign.
+// the sign is -1 if the number of permutations is odd
+// the sign is +1 if the number of permutations is even
+double nml_mat_det(nml_mat_lup* lup) {
+  int k;
+  int sign = (lup->num_permutations%2==0) ? 1 : -1;
+  nml_mat *U = lup->U;
+  double product = 1.0;
+  for(k = 0; k < U->num_rows; k++) {
+    product *= U->data[k][k];
+  }
+  return product * sign;
+}
+\end{verbatim}
+
+\section{QR Decomposition}
+
+Any square matrix $A$ can be decomposed as $A=QR$, where $Q$ is an orthogonal matrix, and $R$ is an upper triangular matrix.
+\\
+
+A (real) matrix is orthogonal if its columns are orthogonal unit vectors, meaning that $QQ^T = Q^TQ = I$, where $Q^T$ is the transpose of $Q$. This means that $Q$ is invertible and $Q^T = Q^{-1}$ for an orthogonal matrix.
+\\
+
+The process of computing $A=QR$ is called the $Gram-Schmidt$ algorithm.
+\\
+
+While $LU(P)$ factorization mainly works over basic matrix operations on rows, the $QR$ decomposition is more focused on columns.
+\\
+
+So, we consider:
+
+$$
+A = 
+\begin{bmatrix}
+| & | & | \\
+a_{1} & a_{2} & a_{3} \\
+| & | & |
+\end{bmatrix}
+\text{, \ where } a_{i} \text{ are the column vectors of A}
+$$
+$$
+Q = 
+\begin{bmatrix}
+| & | & | \\
+q_{1} & q_{2} & q_{3} \\
+| & | & |
+\end{bmatrix}
+\text{, \ where } q_{i} \text{ are the column vectors of Q}
+$$
+
+This gives the following formulas:
+
+$$
+\begin{cases}
+q_{1} = \frac{\displaystyle a_{1}}{\displaystyle \rule{0mm}{4mm} \lVert a_{1} \rVert} \\[3mm]
+q_{2} = \frac{\displaystyle a^{\bot}_{2}}{\displaystyle \rule{0mm}{4mm}\lVert a^{\bot}_{2} \rVert} \text{\quad where,\quad } a^{\bot}_{2} = a_{2} - \langle a_{2}, q_{1} \rangle * q_{1} \\[3mm]
+q_{3} = \frac{\displaystyle a^{\bot}_{3}}{\displaystyle \rule{0mm}{4mm}\lVert a^{\bot}_{3} \rVert} \text{\quad where,\quad } a^{\bot}_{3} = a_{3} - \langle a_{3}, q_{1} \rangle * q_{1} - \langle a_{3}, q_{2} \rangle * q_{2}
+\end{cases}
+$$
+
+Basically, our $QR$ decomposition looks like this:
+
+$$
+\begin{bmatrix}
+| & | & | \\
+a_{1} & a_{2} & a_{3} \\
+| & | & |
+\end{bmatrix}
+=
+\begin{bmatrix}
+| & | & | \\
+\frac{a_{1}}{\lVert a_{1} \rVert} & \frac{a^{\bot}_{2}}{\lVert a^{\bot}_{2} \rVert} & \frac{a^{\bot}_{3}}{\lVert a^{\bot}_{3} \rVert} \\
+| & | & |
+\end{bmatrix}
+\begin{bmatrix}
+\lVert a_{1} \rVert &  \langle a_{2}, q_{1} \rangle & \langle a_{3}, q_{1} \rangle \\
+0 & \lVert a^{\bot}_{2} \rVert &  \langle a_{3}, q_{2} \rangle \\
+0 & 0 & \lVert a^{\bot}_{3} \rVert
+\end{bmatrix}
+$$
+
+These formulas can be generalized for any $n\times n$ matrix.
+\\
+
+In case you are wondering what the notation $\langle a_i, q_j\rangle$ represents, this is called the dot product of two vectors, and it's calculated according to:
+
+\begin{eqnarray}
+\nonumber a & = & [a_1,\, a_2,\, \ldots,\, a_n] \\
+\nonumber b & = & [b_1,\, b_2,\, \ldots,\, b_n]
+\end{eqnarray}
+$$
+\langle a, b\rangle = a_1b_1 + a_2b_2 + \ldots + a_nb_n = \sum a_i b_i
+$$
+
+For a code perspective, this can be implemented as:
+
+\begin{verbatim}
+// Useful for QR decomposition
+// Represents the (dot) product of two vectors:
+// vector1 = m1col column from m1
+// vector2 = m2col column from m2
+double nml_vect_dot(nml_mat *m1, unsigned int m1col, nml_mat *m2, unsigned m2col) {
+  if (m1->num_rows!=m2->num_rows) {
+    NML_FERROR(CANNOT_VECT_DOT_DIMENSIONS, m1->num_rows, m2->num_rows);
+  }
+  if (m1col >= m1->num_cols) {
+    NML_FERROR(CANNOT_GET_COLUMN, m1col, m1->num_cols);
+  }
+  if (m2col >= m2->num_cols) {
+    NML_FERROR(CANNOT_GET_COLUMN, m2col, m2->num_cols);
+  }
+  int i;
+  double dot = 0.0;
+  for(i = 0; i < m1->num_rows; i++) {
+    dot += m1->data[i][m1col] * m2->data[i][m2col];
+  }
+  return dot;
+} 
+\end{verbatim}
+
+if you are wondering what the notation $\parallel a_i \parallel$ represents, this is called the $L2$ Euclidean norm, and it's computed by the formula:
+$$
+\lVert a \rVert = \sqrt{a^{2}_{1} + a^{2}_{2} + ... + a^{2}_{n}}
+$$
+
+From a code perspective, this can be implemented as:
+
+\begin{verbatim}
+// Calculates the l2 norm for a colum in the matrix
+double nml_mat_col_l2norm(nml_mat *m, unsigned int col) {
+  if (col >= m->num_cols) {
+    NML_FERROR(CANNOT_COLUMN_L2NORM, col, m->num_cols);
+  }
+  double doublesum = 0.0;
+  int i;
+  for(i = 0; i < m->num_rows; i++) {
+    doublesum += (m->data[i][col]*m->data[i][col]);
+  }
+  return sqrt(doublesum);
+}
+
+// Calculates the l2norm for each column
+// Keeps results into 1 row matrix
+nml_mat *nml_mat_l2norm(nml_mat *m) {
+  int i, j;
+  nml_mat *r = nml_mat_new(1, m->num_cols);
+  double square_sum;
+  for(j = 0; j < m->num_cols; j++) {
+    square_sum = 0.0;
+    for(i = 0; i < m->num_rows; i++) {
+      square_sum+=m->data[i][j]*m->data[i][j];
+    }
+    r->data[0][j] = sqrt(square_sum);
+  }
+  return r;
+} 
+\end{verbatim}
+
+The code for the process of normalization is:
+
+\begin{verbatim}
+int nml_mat_normalize_r(nml_mat *m) {
+  nml_mat *l2norms = nml_mat_l2norm(m);
+  int j;
+  for(j = 0; j < m->num_cols; j++) {
+    if (l2norms->data[0][j] < NML_MIN_COEF) {
+      NML_FERROR(VECTOR_J_DEGENERATE, j);
+      nml_mat_free(l2norms);
+      return 0;
+    }
+    nml_mat_col_mult_r(m, j, 1/l2norms->data[0][j]);
+  }
+  nml_mat_free(l2norms);
+  return 1;
+}
+
+nml_mat_qr *nml_mat_qr_new() {
+  nml_mat_qr *qr = malloc(sizeof(*qr));
+  NP_CHECK(qr);
+  return qr;
+}
+\end{verbatim}
+
+And the code for the QR algorithm described by:
+$$
+\begin{bmatrix}
+| & | & | \\
+a_{1} & a_{2} & a_{3} \\
+| & | & |
+\end{bmatrix}
+=
+\begin{bmatrix}
+| & | & | \\
+\frac{a_{1}}{\lVert a_{1} \rVert} & \frac{a^{\bot}_{2}}{\lVert a^{\bot}_{2} \rVert} & \frac{a^{\bot}_{3}}{\lVert a^{\bot}_{3} \rVert} \\
+| & | & |
+\end{bmatrix}
+*
+\begin{bmatrix}
+\lVert a_{1} \rVert &  \langle a_{2}, q_{1} \rangle & \langle a_{3}, q_{1} \rangle \\
+0 & \lVert a^{\bot}_{2} \rVert &  \langle a_{3}, q_{2} \rangle \\
+0 & 0 & \lVert a^{\bot}_{3} \rVert
+\end{bmatrix}
+$$
+
+is
 
 \rule{\textwidth}{0.5pt}
 \begin{verbatim}
-#include <iostream>
-int v[10];
+nml_mat_qr *nml_mat_qr_solve(nml_mat *m) {
 
-for (int i = 0; i < 10; i++) {
-    v[i] = i+1;    // v = {1, 2, 3, ..., 10}
-}
+  nml_mat_qr *qr = nml_mat_qr_new();
+  nml_mat *Q = nml_mat_cp(m);
+  nml_mat *R = nml_mat_new(m->num_rows, m->num_cols);
 
-// example 1
-TNT::forward_iterator<int> it = &(v[0]);    // or, `v` instead of `&(v[0])`
-std::cout << *it << std::endl;              // 1;
-++it;
-std::cout << *it << std::endl;              // 2;
-++it;
-std::cout << *it << std::endl;              // 3;
-
-// example 2
-TNT::random_access_iterator<int> it2 = v;
-std::cout << *it2 << std::endl;              // 1;
-it2 += 9;
-std::cout << *it2 << std::endl;              // 10;
-it2 = it2 - 5;
-std::cout << *it2 << std::endl;              // 5;
-\end{verbatim}
-\rule{\textwidth}{0.5pt}
-
-\subsection{Iterators with {\tt Array1D}}
-
-The class {\tt TNT::Array1D<T>} was conveniently modified (see file {\tt `tnt\_array1d\_.h'}) to incorporate public data types for iterators:
-
-\begin{verbatim}
-/* iterators */
-	typedef TNT::random_access_iterator<value_type> iterator;
-	typedef TNT::const_random_access_iterator<value_type> const_iterator;
-	//
-	typedef TNT::input_iterator<value_type>         input_iterator;
-	typedef TNT::output_iterator<value_type>        output_iterator;
-	typedef TNT::forward_iterator<value_type>       forward_iterator;
-	typedef TNT::bidirectional_iterator<value_type> bidirectional_iterator;
-	typedef TNT::random_access_iterator<value_type> random_access_iterator;
-	//
-	typedef TNT::const_forward_iterator<value_type>       const_forward_iterator;
-	typedef TNT::const_bidirectional_iterator<value_type> const_bidirectional_iterator;
-	typedef TNT::const_random_access_iterator<value_type> const_random_access_iterator;
-\end{verbatim}
-
-The data type for {\tt Array1D<T>::iterator} is {\tt random\_access\_iterator<T>}, and the one for \linebreak {\tt Array1D<T>::const\_iterator} is {\tt const\_random\_access\_iterator<T>}, to be conformant with the C++ standard.
-\\
-
-The class {\tt Array1D<T>} also now incorporates methods {\tt begin()}, {\tt end()}, {\tt cbegin()} and {\tt cend()} with the same meaning as the standard ones for the {\tt vector} class in STL. The non-const versions retrieve {\tt Array1D<T>::iterator}, and the const versions retrieve {\tt Array1D<T>::const\_iterator}
-\\
-
-Example:
-\\
-\rule{\textwidth}{0.5pt}
-\begin{verbatim}
-#include <iostream>
-using namespace TNT;
-
-Array1D<int> v(10);    // TNT array
-
-for (int i = 0; i < 10; i++) {
-    v[i] = i+1;    // v = {1, 2, 3, ..., 10}
-}
-
-// example 1
-TNT::Array1D<int>::iterator it = v.begin(); // points to v[0]
-std::cout << *it << std::endl;              // 1;
-++it;
-std::cout << *it << std::endl;              // 2;
-++it;
-std::cout << *it << std::endl;              // 3;
-
-// example 2
-TNT::Array1D<int>::iterator it2 = v.end() - 1; // points to v[9]
-std::cout << *it2 << std::endl;              // 10;
-it2 -= 2;
-std::cout << *it2 << std::endl;              // 8;
-it2 -= 3;
-std::cout << *it2 << std::endl;              // 5;
-
-// example 3: C++ iterators style
-for (auto it = v.begin(); it != v.end(); ++it) {
-    std::cout << *it << std::endl;           // will print 1 to 10
-}
-for (auto it = v.end() - 1; it != v.begin() - 1; --it) {
-    std::cout << *it << std::endl;           // will print 10 to 1
-}
-\end{verbatim}
-
-\subsection{{\tt TNT} arrays, plus iterators, plus STL}
-
-Having created an {\tt iterator} class, accomplishing the requirements of C++11 standard, this should be enough to work along with any of the algorithmic procedures in the STL.
-\\
-Allowing, for example, to further develop template algorithms for handling Data Structures, etc., and this way extending the {\tt TNT} library.
-\\
-
-Example:
-\\
-\rule{\textwidth}{0.5pt}
-\begin{verbatim}
-#include <iostream>
-#include <algorithm>
-using namespace TNT;
-
-Array1D<int> v(10);    // TNT array
-
-// example 1: looping over array
-for (auto &x : v) {
-    std::cout << x << std::endl;           // will print 1 to 10
-}
-for (auto &x : v) {
-    x * = 2;                               // doubling elements in v
-}
-
-// example 2: looping array, using std::for_each
-std::for_each(v.begin(), v.end(), [](int x) {std::cout << x << std::endl;} );
-
-// example 3: populating array, using std::fill
-std::fill(v.begin(), v.end(), 3);
-
-// example 4: doubling values, using std::transform
-std::for_each(v.begin(), v.end(), v.begin(), [](int x) {return 2*x;} );
-
-// example 5: sorting array, using std::sort
-std::sort(v.begin(), v.end());
-\end{verbatim}
-
-\section{Testing}
-
-Test programs were designed to check a variety of features about the defined classes. All the content is into the folder {\tt `testing'}. The file {\tt `iterator.cpp'} is to test the class {\tt iterator} merely, that is, over regular C arrays. The file {\tt `Array1D.cpp'} is to test the iterators applied to the {\tt TNT} arrays. Here, we can comprobate several types of constructors, assignment operator, increments and decrements, as well as the behavior of the {\tt TNT::Array1D::iterator} working together with the STL algorithms.
-\\
-
-A {\tt makefile} was built to automate the process of compilation. So, first move to the testing directory
-\begin{verbatim}
-    ~$ cd testing
-\end{verbatim}
-
-and then
-
-\begin{verbatim}
-    ~$ make
-\end{verbatim}
-
-or (if you have garbage files from an old compilation)
-
-\begin{verbatim}
-    ~$ make clean; make
-\end{verbatim}
-
-will produce two executables: `{\tt iterator}' and `{\tt Array1D}'. Once done this, the commands
-
-\begin{verbatim}
-    ~$ ./iterator
-    ~$ ./Array1D
-\end{verbatim}
-
-are to run each of these tests. Note that you can define two constants, {\tt N\_ELEM} and {\tt MAX\_NUMBER} to control the number of (random) elements in the datasets, and the range of those.
-\\
-These constants are default to {\tt N\_ELEM=10}, and {\tt MAX\_NUMBER=20}, but you can change them by editing the makefile, or directly as for example
-
-\begin{verbatim}
-    ~$ g++ -o iterator iterator.cpp -DN_ELEM=100
+  int j, k;
+  double l2norm;
+  double rkj;
+  nml_mat *aj;
+  nml_mat *qk;
+  for(j=0; j < m->num_cols; j++) {    
+    rkj = 0.0;
+    aj = nml_mat_col_get(m, j);
+    for(k = 0; k < j; k++) {
+       rkj = nml_vect_dot(m, j, Q, k);
+       R->data[k][j] = rkj;
+       qk = nml_mat_col_get(Q, k);
+       nml_mat_col_mult_r(qk, 0, rkj);
+       nml_mat_sub_r(aj, qk);
+       nml_mat_free(qk);
+    }
+    for(k = 0; k < Q->num_rows; k++) {
+      Q->data[k][j] = aj->data[k][0];
+    }
+    l2norm = nml_mat_col_l2norm(Q, j);
+    nml_mat_col_mult_r(Q, j, 1/l2norm);
+    R->data[j][j] = l2norm;
+    nml_mat_free(aj);
+  }
+  qr->Q = Q;
+  qr->R = R;
+  return qr;
+} 
 \end{verbatim}
 
 % References
 \begin{thebibliography}{9}
-\bibitem{tnt}
-The {\tt TNT} home page.
-\\ \url{https://math.nist.gov/tnt/index.html}.
+\bibitem{ref}
+How to change a matrix into its Reduced Echelon Form
+\\ 
+\url{https://stattrek.com/matrix-algebra/echelon-transform.aspx?tutorial=matrix}.
 
-\bibitem{Array1D-doc}
-Documentation for {\tt TNT::Array1D} 
-\\ \url{https://math.nist.gov/tnt/tnt_doxygen/class_TNT__Array1D.html}
+\bibitem{lup}
+LU(P) decomposition
+\\ 
+\url{http://lampx.tugraz.at/~hadley/num/ch2/2.3a.php}
 
-\bibitem{writing-custom-iterators}
-An article describing how to write your own {\tt iterator} class.
-\\ \url{https://www.internalpointers.com/post/writing-custom-iterators-modern-cpp}
+\bibitem{qr}
+The QR decomposition
+\\ 
+\url{https://www.youtube.com/watch?v=FAnNBw7d0vg}
 
-\bibitem{iterators-overview}
-A post with an overview of C++ iterators.
-\\ \url{https://www.learncpp.com/cpp-tutorial/stl-iterators-overview/}
+\bibitem{vector-norm}
+Norm of vectors.
+\\ 
+\url{https://en.wikipedia.org/wiki/Norm_(mathematics)}
 
-\bibitem{C++-iterator}
-The standard reference for C++ iterators.
-\\ \url{http://www.cplusplus.com/reference/iterator/}
+\bibitem{dot-product}
+The dot product of vectors.
+\\ 
+\url{https://en.wikipedia.org/wiki/Dot_product}
 \end{thebibliography}
-\end{document}n
+\end{document}

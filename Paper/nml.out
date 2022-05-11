@@ -36,3 +36,8 @@
 \BOOKMARK [2][-]{subsection.13.2}{Code implementation}{section.13}% 36
 \BOOKMARK [1][-]{section.14}{Solving linear systems of equations}{}% 37
 \BOOKMARK [2][-]{subsection.14.1}{Forward substitution}{section.14}% 38
+\BOOKMARK [2][-]{subsection.14.2}{Backward substitution}{section.14}% 39
+\BOOKMARK [2][-]{subsection.14.3}{Solving linear systems using LU\(P\) decomposition}{section.14}% 40
+\BOOKMARK [2][-]{subsection.14.4}{Calculating the inverse of the matrix using LU\(P\) decomposition}{section.14}% 41
+\BOOKMARK [2][-]{subsection.14.5}{Calculating the determinant of the matrix using LU\(P\) decomposition}{section.14}% 42
+\BOOKMARK [1][-]{section.15}{QR Decomposition}{}% 43
