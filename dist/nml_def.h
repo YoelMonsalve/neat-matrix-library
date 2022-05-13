@@ -65,5 +65,9 @@ typedef bool_t bool;
  * It is equivalent to matrix->data[i][j], in 2D indexing
  */
 #define __NML_ELEM(matrix, i, j, num_cols) ((matrix)->__data[ __NML_1D_INDEX(i, j, num_cols) ])
+/* if `num_cols` has been properly defined in the current block of code */
+#define __NML_ELEM2(matrix, i, j) ((matrix)->__data[ __NML_1D_INDEX(i, j, num_cols) ])
+/* this form is more time expensive, because of requiring to calculate the fourth argument */
+#define __NML_ELEM3(matrix, i, j) ((matrix)->__data[ __NML_1D_INDEX(i, j, matrix->num_cols) ])
 
 #endif

@@ -11,12 +11,25 @@
 
 int main(int argc, char *argv[]) {
     
+    double v[] = {
+        1.0, 2.0, 3.0, 
+        4.0, 5.0, 6.0,
+        7.0, 8.0, 9.0
+    };
+
+    nml_mat *X = nml_mat_sqr(3);
+    nml_mat_from_array(X, v);
+    printf("X:\n");
+    nml_mat_printf(X, "%10.4lf  ");
+
     // zeroes matrix
     nml_mat *A = nml_mat_new(3,4);
+    printf("A:\n");
     nml_mat_printf(A, "%10.4lf  ");
 
     // eye matrix
     nml_mat *B = nml_mat_eye(4);
+    printf("B:\n");
     printf("B: (%d) x (%d)\n", 
         nml_mat_dim(B, 1),
         nml_mat_dim(B, 2)

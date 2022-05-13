@@ -350,6 +350,16 @@ nml_mat *nml_mat_fromfilef(FILE *f) {
   return r;
 }
 
+void nml_mat_from_array(nml_mat *A, const double *v) {
+  int i, j;
+  unsigned int num_rows = __NML_ROWS(A), num_cols = __NML_COLS(A);
+  for (i = 0; i < num_rows; i++) {
+    for (j = 0; j < num_cols; j++) {
+      __NML_ELEM2(A, i, j) = v[i*num_cols + j];
+    }
+  }
+}
+
 /**
  * Return the number of rows of matrix.
  *

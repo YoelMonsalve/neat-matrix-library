@@ -45,9 +45,10 @@ typedef bool_t bool;
  * Inspired in the gnu stdc name convention:
  * https://github.com/gcc-mirror/gcc/blob/d9375e490072d1aae73a93949aa158fcd2a27018/libstdc%2B%2B-v3/include/bits/stl_algo.h#L3858
  */
-#define __NML_COLS(m) ((m)->num_cols)
 #define __NML_ROWS(m) ((m)->num_rows)
+#define __NML_COLS(m) ((m)->num_cols)
 #define __NML_DATA(m) ((m)->__data)
+#define __NML_IS_SQUARE(m) ((m)->num_rows == (m)->num_cols)
 
 /**
  * this is a MACRO (not a function) to convert 2D indexes into a 1D contiguous index, by means of
@@ -64,5 +65,9 @@ typedef bool_t bool;
  * It is equivalent to matrix->data[i][j], in 2D indexing
  */
 #define __NML_ELEM(matrix, i, j, num_cols) ((matrix)->__data[ __NML_1D_INDEX(i, j, num_cols) ])
+/* if `num_cols` has been properly defined in the current block of code */
+#define __NML_ELEM2(matrix, i, j) ((matrix)->__data[ __NML_1D_INDEX(i, j, num_cols) ])
+/* this form is more time expensive, because of requiring to calculate the fourth argument */
+#define __NML_ELEM3(matrix, i, j) ((matrix)->__data[ __NML_1D_INDEX(i, j, matrix->num_cols) ])
 
 #endif

@@ -68,6 +68,7 @@ nml_mat *nml_mat_cp(nml_mat *m);
 nml_mat *nml_mat_from(unsigned int num_rows, unsigned int num_cols, unsigned int n_vals, double *vals);
 nml_mat *nml_mat_fromfile(const char *file);
 nml_mat *nml_mat_fromfilef(FILE *f);
+void nml_mat_from_array(nml_mat *A, const double *v);
 void nml_mat_free(nml_mat *matrix);
 
 // *****************************************************************************
@@ -104,10 +105,10 @@ double nml_mat_get(nml_mat *matrix, unsigned int i, unsigned int j);
 void nml_mat_set(nml_mat *matrix, unsigned int i, unsigned int j, double value);
 nml_mat *nml_mat_col_get(nml_mat *m, unsigned int col);
 nml_mat *nml_mat_col_mult(nml_mat *m, unsigned int col, double num);
-int nml_mat_col_mult_r(nml_mat *m, unsigned int col, double num);
+bool nml_mat_col_mult_r(nml_mat *m, unsigned int col, double num);
 nml_mat *nml_mat_row_get(nml_mat *m, unsigned int row);
 nml_mat *nml_mat_row_mult(nml_mat *m, unsigned int row, double num);
-int nml_mat_row_mult_r(nml_mat *m, unsigned int row, double num);
+bool nml_mat_row_mult_r(nml_mat *m, unsigned int row, double num);
 void nml_mat_all_set(nml_mat *matrix, double value);
 int nml_mat_diag_set(nml_mat *matrix, double value);
 nml_mat *nml_mat_row_addrow(nml_mat *m, unsigned int where, unsigned int row, double multiplier);
