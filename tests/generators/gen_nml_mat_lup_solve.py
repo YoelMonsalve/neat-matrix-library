@@ -5,7 +5,7 @@ from sympy import Matrix, pprint, randMatrix, N, eye
 from sympy.printing.str import StrPrinter
 from sympy.abc import x 
 
-filename = "test_nml_mat_lup_solve.data"
+filename = "data/test_nml_mat_lup_solve.data"
 
 num_tests = 400
 min_M_cols = 1

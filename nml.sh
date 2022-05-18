@@ -45,10 +45,10 @@ function sanity_checks {
     echo -e " ${GREEN}OK${NC}"
   done
 
-  for src in ${SOURCE_FILES[@]};
+  for file in ${SOURCE_FILES[@]};
   do
-    echo -ne "\tChecking if ${src} exists in folder:"
-    if [ ! -f "${src}" ]; then
+    echo -ne "\tChecking if src/${file} exists in folder:"
+    if [ ! -f "src/${file}" ]; then
       echo -e " ${RED}NOK${NC}"
       echo -e " ${RED}ABORTING${NC}"
       exit
@@ -56,10 +56,10 @@ function sanity_checks {
     echo -e " ${GREEN}OK${NC}"
   done
 
-  for hfile in ${HEADER_FILES[@]};
+  for header in ${HEADER_FILES[@]};
   do
-    echo -ne "\tChecking if ${hfile} exists in folder:"
-    if [ ! -f "${hfile}" ]; then
+    echo -ne "\tChecking if include/${header} exists in folder:"
+    if [ ! -f "include/${header}" ]; then
       echo -e " ${RED}NOK${NC}"
       echo -e " ${RED}ABORTING${NC}"
       exit
@@ -69,33 +69,41 @@ function sanity_checks {
 }
 
 function compile_objects {
-  echo -e "${YELLOW}Compiling Objects:${NC}"
+  make objects
+: ' echo -e "${YELLOW}Compiling Objects:${NC}"
   for src_file in ${SOURCE_FILES[@]};
   do
     echo -e "\tCompiling ${src_file}"
     $CC ${CCFLAGS} ${src_file}
   done
+'
 }
 
 function archive_lib {
-  echo -e "${YELLOW}Building Library${NC} -> ${LIB_NAME} -> from:"
+  make lib
+: ' echo -e "${YELLOW}Building Library${NC} -> ${LIB_NAME} -> from:"
   for object in ${OBJECT_FILES[@]};
   do
     echo -e "\t${object}"
   done
   $AR ${ARFLAGS} $LIB_NAME ${OBJECT_FILES[@]}
+'
 }
 
 function dist_lib {
-  mkdir -p $DIST_DIR
+  make dist
+: ' mkdir -p $DIST_DIR
   mv ${LIB_NAME} ${DIST_DIR}/
   for header in ${HEADER_FILES[@]};
   do
       cp $header ${DIST_DIR}
   done
+'
 }
 
 function clean {
+  make clean
+: '
   echo -e "${YELLOW}Deleting:${NC}"
   echo -e "\tAll files (*.o) in `pwd`files."
   rm -f *.o
@@ -109,10 +117,12 @@ function clean {
   rm -rf ${EXAMPLES_LIB}
   echo -e "\tFolder `pwd`/${TESTS_LIB}${NC}"
   rm -rf ${TESTS_LIB}
+'  
 }
 
 function examples {
-  echo -e "${YELLOW}Preparing examples/ folder with the latest version:${NC}"
+  make examples  
+: ' echo -e "${YELLOW}Preparing examples/ folder with the latest version:${NC}"
   echo -e "\tMoving ${DIST_DIR}/* to ${EXAMPLES_LIB}/*"
   cp -r ${DIST_DIR} ${EXAMPLES_LIB}
   echo -e "${YELLOW}Compiling Examples:${NC}"
@@ -122,9 +132,12 @@ function examples {
       echo -e "\t $file -> ${GREEN}${file%%.*}.ex${NC}"
       ${CC} ${CCFLAGS_EXAMPLES} ${file} -L ./${EXAMPLES}/lib -l${LIB_NAME_SIMPLE} -o ${file%%.*}.ex
     done
+'  
 }
 
 function tests {
+  make tests
+: '  
   echo -e "${YELLOW}Preparing tests/ folder with the latest versions: ${NC}"
   echo -e "\tMoving ${DIST_DIR}/* to ${TESTS_LIB}/*"
   cp -r ${DIST_DIR} ${TESTS_LIB}
@@ -139,7 +152,12 @@ function tests {
     do
       ./${file} `pwd`/${file%%.*}.data
     done   
+'  
 } 
+
+function all {
+  make all
+}
 
 ### MAIN ###
 
@@ -150,6 +168,9 @@ echo -e " "
 for token in "${@}" ;
 do
   case $token in
+  "check")
+    sanity_checks
+    ;;
   "build")
     sanity_checks
     compile_objects
@@ -172,6 +193,9 @@ do
     ;;
   "clean")
     clean
+    ;;
+  "all")
+    all
     ;;
   *)
     echo -e "${RED}Unknown Option: '${1}'.${NC}"

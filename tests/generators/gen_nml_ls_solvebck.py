@@ -4,7 +4,7 @@ from sympy.matrices.dense import zeros
 from sympy.printing.str import StrPrinter
 from sympy.abc import x 
 
-filename = "test_nml_ls_solvebck.data"
+filename = "data/test_nml_ls_solvebck.data"
 
 num_tests = 400
 min_M_cols = 1
