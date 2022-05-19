@@ -6,6 +6,12 @@
 
 - [*In progress*] Implementing continuous storage for elements in the matrix.
 
+## [1.0.1] - 2022.05.19
+
+### Added
+
+- Makefile, and a paragraph into the README explaining how to use it.
+
 ## [1.0.0] - 2022.05.15
 
 ### Added

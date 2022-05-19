@@ -73,7 +73,7 @@ Table of Contents
 # Compile / Run Examples
 
 The build file for the library it's called `nml.sh`. 
-It's actually a `bash` script (not a `makefile`!).
+It's actually a `bash` script (we alternative provide a [Makefile](#Makefile)).
 
 ## Building the library
 
@@ -116,7 +116,7 @@ To run an example:
 ./nml.sh clean examples && ./examples/playground.ex
 ```
 
-## Running the tests 
+## Running the tests
 
 To run the tests 
 
@@ -138,6 +138,18 @@ In the `tests/generators/` folder you can find the python3 (`.py`) scripts used 
 ```
 
 This will clean everything (`*.o`,`*.ex`,`*.a`) and will leave the library folder in a clean state.
+
+# Makefile
+
+We provide a Makefile to compile the library, in a Unix-like environment. Use
+
+- `make build`, or `make dist` to build the objects and library file.
+- `make examples` to produces the executables for examples.
+- `make tests` to produces the executables for tests.
+- `make clean` to clean everything (`*.o`,`*.a`, `lib`,`obj`, and executables) and leave the library folder in a clean state.
+- `make` to compile everything.
+
+A good idea to start is just to type `make` if you are running by the first time, or `make clean && make` if you are running after a previous failed compilation.
 
 # How to use the library
 
@@ -1046,7 +1058,7 @@ To run the example:
 
 To calculate the trace of the matrix the following method can be used: `double nml_mat_trace(nml_mat* m)`.
 
-## Row Echelon 
+## Row Echelon
 
 ### Calculate Row Echelon Form using Gaussian Elimination
 

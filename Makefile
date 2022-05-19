@@ -11,17 +11,18 @@ CCFLAGS_EXAMPLES := -Wall -lm --std=$(CSTD)
 CCFLAGS_TESTS    := -Wall -lm --std=$(CSTD)
 AR := ar
 ARFLAGS := crs
+
 SRC_DIR := src
 SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJ_DIR := obj
 OBJ_NAMES := $(SRCS:$(SRC_DIR)/%.c=%.o)
 OBJS := $(addprefix $(OBJ_DIR)/,$(OBJ_NAMES))
-INC_DIR := include
 
 # NOTE: if 'include/'' contains subdirectories, something more complex will be needed,
 #       for example
 #       
 #       INCS := $(shell find $(INC_DIR) -type f -name '*.h')
+INC_DIR := include
 INCS := $(shell find $(INC_DIR) -type f -name '*.h')
 INC_FLAGS := $(addprefix -I,$(INC_DIR))
 
@@ -67,7 +68,9 @@ print_info:
 # DISTRIBUTABLE FILES
 #   libraries, headers
 # ======================================================
-dist: $(DISTS)
+build: dist#    'build' is an alias for 'dist'
+
+dist: lib $(DISTS)
 
 # build directory for dist, if it does not exist
 dist_dir:
@@ -81,6 +84,17 @@ $(DISTS): $(LIBS) $(INCS)
 	
 # NML LIBRARY
 # =============================================================================
+lib: lib_dir objects $(LIBS)#             lib requires library folder, plus objects done
+	@echo "${YELLOW}Library done.${NC}"
+
+# build directory for library, if it does not exist
+lib_dir:
+	@[ -d $(LIB_DIR) ] || { echo "${YELLOW}Creating '$(LIB_DIR)/'${NC}" \
+		&& mkdir $(LIB_DIR); }
+
+objects: $(OBJ_DIR) $(OBJS)
+	@echo "${YELLOW}Compiling objects done.${NC}"
+
 # create directory for objects
 $(OBJ_DIR):
 	@echo "Creating directory '${OBJ_DIR}/'"
@@ -101,17 +115,6 @@ $(LIBS): $(OBJS)
 	${AR} ${ARFLAGS} ${LIB_DIR}/${LIB_NAME} ${OBJS}
 	@echo "${YELLOW}File created -> ${LIB_DIR}/${LIB_NAME}${NC}"
 
-lib: lib_dir $(LIBS) 
-	@echo "${YELLOW}Library done.${NC}"
-
-# build directory for library, if it does not exist
-lib_dir: $(OBJ_DIR)
-	@[ -d $(LIB_DIR) ] || { echo "${YELLOW}Creating '$(LIB_DIR)/'${NC}" \
-		&& mkdir $(LIB_DIR); }
-
-objects: $(OBJ_DIR) $(OBJS)
-	@echo "${YELLOW}Compiling objects done.${NC}"
-
 
 # EXAMPLES 
 # ======================================================
@@ -120,7 +123,7 @@ EXAMPLE_EXECS := $(notdir $(EXAMPLE_SRCS))
 EXAMPLE_EXECS := $(addprefix $(EXAMPLE_DIR)/,$(EXAMPLE_EXECS:%.c=%))
 EXAMPLE_DISTS := $(DISTS:$(DIST_DIR)/%=$(EXAMPLE_DIR)/%)
 
-examples: example_dir $(EXAMPLE_EXECS)
+examples: dist example_dir $(EXAMPLE_EXECS)
 
 # compiling executables
 $(EXAMPLE_DIR)/%: $(EXAMPLE_DIR)/src/%.c $(EXAMPLE_DISTS)
@@ -146,7 +149,7 @@ TEST_EXECS := $(notdir $(TEST_SRCS))
 TEST_EXECS := $(addprefix $(TEST_DIR)/,$(TEST_EXECS:%.c=%))
 TEST_DISTS := $(DISTS:$(DIST_DIR)/%=$(TEST_DIR)/%)
 
-tests: test_dir $(TEST_EXECS)
+tests: dist test_dir $(TEST_EXECS)
 
 # compiling executables
 $(TEST_DIR)/%: $(TEST_DIR)/src/%.c $(TEST_DISTS)
@@ -167,10 +170,6 @@ $(TEST_DISTS): $(DISTS)
 
 # OTHERS
 # ===================================================================
-check:
-	@echo "${YELLOW}Sanity Checks:${NC}"
-	# TO - DO
-
 greet:
 	@echo
 	@echo "${GREEN}N${NC}eat ${GREEN}M${NC}atrix ${GREEN}L${NC}ibrary (libnml)"
