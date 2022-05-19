@@ -23,8 +23,8 @@ limitations under the License.
 //---------------------------------------------------------------------
 #define NML_MAJOR_VERSION    '1'
 #define NML_MINOR_VERSION    '0'
-#define NML_SUBMINOR_VERSION '0'
-#define NML_VERSION_STRING "1.0.0"
+#define NML_SUBMINOR_VERSION '1'
+#define NML_VERSION_STRING "1.0.1"
 
 
 #endif
