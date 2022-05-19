@@ -38,6 +38,7 @@ Table of Contents
       * [Building the examples](#building-the-examples)
       * [Running the tests](#running-the-tests)
       * [Cleaning](#cleaning)
+   * [Makefile](#Makefile)
    * [How to use the library](#how-to-use-the-library)
       * [Creating matrices](#creating-matrices)
          * [Creating a new Matrix](#creating-a-new-matrix)
